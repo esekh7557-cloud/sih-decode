@@ -10,6 +10,18 @@ let recognition = null;
 let isListening = false;
 let voiceTranscript = "";
 let sendVoiceMessage = false;
+let additionalDocumentData = [];
+let savedProfileData = {};
+const DOCUMENT_TYPES = [
+  "Aadhaar Card",
+  "PAN Card",
+  "Income Certificate",
+  "Residence Certificate",
+  "Caste Certificate",
+  "Birth Certificate",
+  "Ration Card",
+  "Other Document",
+];
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -166,10 +178,13 @@ function profilePayload() {
   return {
     name: $("#profile-name").value.trim(),
     age: numberValue("age"),
+    dob: $("#profile-dob").value.trim(),
     gender: $("#profile-gender").value,
     state: $("#profile-state").value,
     occupation: $("#profile-occupation").value,
     annual_income: numberValue("annual_income"),
+    mobile: $("#profile-mobile").value.trim(),
+    address: $("#profile-address").value.trim(),
     caste_category: $("#profile-category").value,
     land_acres: numberValue("land_acres") || 0,
     employment_sector: $("#profile-sector").value,
@@ -195,6 +210,25 @@ function updateReadiness() {
   $("#readiness-text").textContent = percentage === 100
     ? "Your profile is ready for personalised guidance"
     : remaining + " key detail" + (remaining === 1 ? "" : "s") + " remaining";
+}
+
+function missingEligibilityFields() {
+  const data = profilePayload();
+  const missing = [];
+  if (data.age === null) missing.push("your age");
+  if (!data.gender) missing.push("your gender");
+  if (!data.occupation) missing.push("your occupation");
+  if (data.annual_income === null) missing.push("your annual family income");
+  if (data.occupation === "farmer" && !data.land_acres) missing.push("your cultivable land in acres");
+  return missing;
+}
+
+function askForMissingDetails() {
+  const missing = missingEligibilityFields();
+  if (!missing.length) return;
+  const question = "I could not find " + missing.join(", ") + " in the uploaded documents. Please enter " + (missing.length === 1 ? "it" : "these details") + " in Your details so I can check schemes accurately.";
+  addMessage("assistant", question);
+  showToast("More information is needed for accurate scheme guidance.", "info");
 }
 
 function renderSchemes(schemes) {
@@ -352,20 +386,87 @@ function renderDocuments() {
     item.className = "document-item";
     const info = document.createElement("div");
     const name = document.createElement("strong");
-    name.textContent = file.name;
+    name.textContent = file.file.name;
     const size = document.createElement("small");
-    size.textContent = Math.max(1, Math.round(file.size / 1024)) + " KB";
+    size.textContent = Math.max(1, Math.round(file.file.size / 1024)) + " KB";
     info.append(name, size);
+    const type = document.createElement("select");
+    type.className = "document-type-select";
+    type.setAttribute("aria-label", "Document type for " + file.file.name);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select document type";
+    type.appendChild(placeholder);
+    DOCUMENT_TYPES.forEach((documentType) => {
+      const option = document.createElement("option");
+      option.value = documentType;
+      option.textContent = documentType;
+      option.selected = file.documentType === documentType;
+      type.appendChild(option);
+    });
+    type.addEventListener("change", (event) => {
+      selectedFiles[index].documentType = event.target.value;
+    });
     const remove = document.createElement("button");
     remove.className = "remove-document";
     remove.type = "button";
-    remove.setAttribute("aria-label", "Remove " + file.name);
+    remove.setAttribute("aria-label", "Remove " + file.file.name);
     remove.textContent = "x";
     remove.addEventListener("click", () => {
       selectedFiles.splice(index, 1);
       renderDocuments();
     });
-    item.append(info, remove);
+    item.append(info, type, remove);
+    list.appendChild(item);
+  });
+}
+
+function formatFieldName(field) {
+  return field.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderAdditionalDocumentData() {
+  const section = $("#additional-data");
+  const list = $("#additional-data-list");
+  list.innerHTML = "";
+  section.hidden = additionalDocumentData.length === 0;
+  additionalDocumentData.forEach((entry) => {
+    Object.entries(entry.fields).forEach(([field, value]) => {
+      const item = document.createElement("div");
+      item.className = "additional-data-item";
+      const label = document.createElement("span");
+      label.textContent = entry.documentType + " - " + formatFieldName(field);
+      const content = document.createElement("strong");
+      content.textContent = typeof value === "object" ? JSON.stringify(value) : String(value);
+      item.append(label, content);
+      list.appendChild(item);
+    });
+  });
+}
+
+function safeSavedValue(field, value) {
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  const digits = text.replace(/\D/g, "");
+  if ((field.toLowerCase().includes("aadhaar") || field === "id_proof_no") && digits.length >= 12) {
+    return "XXXX XXXX " + digits.slice(-4);
+  }
+  return text;
+}
+
+function renderSavedProfileData() {
+  const section = $("#saved-data");
+  const list = $("#saved-data-list");
+  const entries = Object.entries(savedProfileData);
+  list.innerHTML = "";
+  section.hidden = entries.length === 0;
+  entries.forEach(([field, value]) => {
+    const item = document.createElement("div");
+    item.className = "saved-data-item";
+    const label = document.createElement("span");
+    label.textContent = formatFieldName(field);
+    const content = document.createElement("strong");
+    content.textContent = safeSavedValue(field, value);
+    item.append(label, content);
     list.appendChild(item);
   });
 }
@@ -383,37 +484,108 @@ async function extractDocuments() {
   if (!selectedFiles.length) return;
   const button = $("#scan-documents-button");
   button.disabled = true;
-  button.textContent = "Extracting details...";
-  $("#scan-status").textContent = "Reading the uploaded images securely...";
+  button.textContent = "Extracting documents...";
+  $("#scan-status").textContent = "Preparing labelled document extraction...";
   try {
-    const images = await Promise.all(selectedFiles.map(async (file) => ({ name: file.name, data: await readFileAsDataUrl(file) })));
-    const result = await api("/sessions/" + sessionId + "/scan", "POST", { expected_type: "document", images });
-    applyExtractedFields(result.summary || {});
+    const unlabelled = selectedFiles.filter((item) => !item.documentType);
+    if (unlabelled.length) {
+      throw new Error("Select the document type for every uploaded file before extracting.");
+    }
+
+    let extractedCount = 0;
+    const errors = [];
+    for (let index = 0; index < selectedFiles.length; index += 1) {
+      const item = selectedFiles[index];
+      $("#scan-status").textContent = "Extracting " + (index + 1) + " of " + selectedFiles.length + ": " + item.documentType;
+      try {
+        const result = await api("/sessions/" + sessionId + "/scan", "POST", {
+          expected_type: item.documentType,
+          images: [{ name: item.file.name, data: await readFileAsDataUrl(item.file) }],
+        });
+        applyExtractedFields(result.summary || {});
+        Object.assign(savedProfileData, result.summary || {});
+        renderSavedProfileData();
+        if (result.extra_fields && Object.keys(result.extra_fields).length) {
+          additionalDocumentData.push({ documentType: item.documentType, fields: result.extra_fields });
+          renderAdditionalDocumentData();
+        }
+        extractedCount += 1;
+      } catch (error) {
+        errors.push(item.file.name);
+      }
+    }
+    let profileSaved = false;
+    if (extractedCount) {
+      try {
+        await saveProfile({ quiet: true });
+        profileSaved = true;
+      } catch (error) {
+        showToast("Documents were processed, but please review the extracted profile details before saving.", "info");
+      }
+    }
     updateReadiness();
-    $("#scan-status").textContent = "Details extracted. Please review your profile before checking schemes.";
-    showToast("Document details have been added to the profile.", "success");
-    addMessage("assistant", "I extracted the available document details. Please check the profile fields and correct anything that looks wrong.");
+    $("#scan-status").textContent = extractedCount + " document" + (extractedCount === 1 ? "" : "s") + (profileSaved ? " processed and saved to your profile." : " processed. Please review your profile before saving.");
+    if (errors.length) {
+      showToast("Could not process: " + errors.join(", ") + ".", "error");
+    } else {
+      showToast("Labelled document details have been added to the profile.", "success");
+      addMessage("assistant", "I processed your labelled documents. Please check the profile fields and correct anything that looks wrong.");
+    }
+    if (extractedCount) askForMissingDetails();
   } catch (error) {
     $("#scan-status").textContent = "Could not extract details. You can still enter them manually.";
     showToast(error.message, "error");
   } finally {
     button.disabled = selectedFiles.length === 0;
-    button.textContent = "Extract document details";
+    button.textContent = "Extract labelled documents";
   }
 }
 
 function applyExtractedFields(fields) {
   const bindings = {
-    name: "#profile-name", age: "#profile-age", gender: "#profile-gender",
+    name: "#profile-name", age: "#profile-age", dob: "#profile-dob",
+    mobile: "#profile-mobile", address: "#profile-address", gender: "#profile-gender",
     state: "#profile-state", occupation: "#profile-occupation",
     annual_income: "#profile-income", caste_category: "#profile-category",
     land_acres: "#profile-land",
   };
   Object.entries(bindings).forEach(([field, selector]) => {
     if (fields[field] !== undefined && fields[field] !== null && fields[field] !== "") {
-      $(selector).value = fields[field];
+      $(selector).value = normaliseExtractedValue(field, fields[field]);
     }
   });
+}
+
+function normaliseExtractedValue(field, value) {
+  const text = String(value).trim();
+  if (["age", "annual_income", "land_acres"].includes(field)) {
+    return text.replace(/[^\d.]/g, "");
+  }
+  if (field === "gender") {
+    const gender = text.toLowerCase();
+    if (gender.startsWith("m")) return "male";
+    if (gender.startsWith("f")) return "female";
+    if (gender.startsWith("o")) return "other";
+  }
+  if (field === "caste_category") return text.toUpperCase();
+  if (field === "occupation") {
+    const occupation = text.toLowerCase().replace(/\s+/g, "_");
+    const aliases = {
+      "farmer": "farmer",
+      "agriculturist": "farmer",
+      "student": "student",
+      "artisan": "artisan",
+      "craftsperson": "artisan",
+      "small_business": "small_business",
+      "business_owner": "small_business",
+      "salaried": "salaried",
+      "employee": "salaried",
+      "unemployed": "unemployed",
+      "pensioner": "pensioner",
+    };
+    return aliases[occupation] || "";
+  }
+  return text;
 }
 
 async function askAssistant(message) {
@@ -453,7 +625,11 @@ async function endSession() {
     await api("/sessions/" + sessionId, "DELETE");
     sessionId = null;
     selectedFiles = [];
+    additionalDocumentData = [];
+    savedProfileData = {};
     renderDocuments();
+    renderAdditionalDocumentData();
+    renderSavedProfileData();
     renderSchemes([]);
     $("#session-status").textContent = "Session erased. Starting a new one...";
     await startSession();
@@ -486,7 +662,9 @@ function bindEvents() {
   $("#profile-state").addEventListener("change", () => loadServices().catch((error) => showToast(error.message, "error")));
   $("#profile-form").addEventListener("input", updateReadiness);
   $("#document-input").addEventListener("change", (event) => {
-    selectedFiles = selectedFiles.concat(Array.from(event.target.files || []));
+    selectedFiles = selectedFiles.concat(
+      Array.from(event.target.files || []).map((file) => ({ file, documentType: "" }))
+    );
     event.target.value = "";
     renderDocuments();
   });

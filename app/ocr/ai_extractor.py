@@ -64,11 +64,9 @@ Analyze the provided document image(s) and any conversation history. Your goal i
 Extraction Guidelines:
 1. Extract ONLY information that is explicitly readable in the image or provided by the user in the conversation history.
 2. DO NOT invent, guess, or provide placeholder values.
-3. If ANY fields are missing and cannot be extracted from the images or conversation history, you MUST ask the user for them.
-   Return a JSON object like this: {"action": "ask", "questions": ["Question 1", "Question 2", ...]}
-   You MUST include a separate question in the array for EVERY single field that is still missing. Do not limit the number of questions.
-4. If ALL fields are found and nothing is missing, return a JSON object with just the extracted key-value pairs. 
-5. Do NOT include markdown fences, explanations, or any placeholder keys.
+3. ALWAYS return every factual field that is visible in the document, even when many other fields are missing.
+4. Omit fields that are missing or unreadable. Do not ask questions and do not return an action or questions key.
+5. Return only one valid JSON object containing the extracted key-value pairs. Do not include markdown fences, explanations, placeholder values, or guessed values.
 """
 
 

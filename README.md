@@ -1,3 +1,6 @@
+PS3: Digital Citizen Assistant for multilingual access to government services and schemes.
+
+
 # JanSeva AI
 
 JanSeva AI is a digital citizen assistant for government services and welfare
@@ -20,8 +23,6 @@ starts. It provides:
   - Can I apply for PM-KISAN?
 - Explainable scheme cards with eligibility reason, benefit, and application
   route.
-- Live official-web guidance for application websites and current next steps
-  when the citizen asks how or where to apply.
 - Certificate service checklists with documents, fee, processing time, and
   validity.
 - An end-session control that removes tracked session data.
@@ -62,8 +63,6 @@ http://127.0.0.1:8000/docs for interactive API documentation.
 - OPENROUTER_API_KEY enables AI Vision document extraction, optional scheme
   enrichment, and browser-agent features. Never commit a real key.
 - OPENROUTER_MODEL selects the OpenRouter model.
-- SERPER_API_KEY enables official government-portal web search. JanSeva sends
-  only the citizen question and state, never the saved profile.
 - JANSEVA_OUTPUT_DIR sets the generated document directory.
 - JANSEVA_BASE_URL sets the URL included in QR-code download fallbacks.
 
@@ -94,8 +93,8 @@ Vision implementation.
   must be verified by a human authority.
 - The development server has permissive CORS and should not be exposed to the
   public internet without deployment hardening.
-- Uploaded document images are stored only in the session scan directory for
-  portal-workflow use and are removed when that session is erased.
+- Review the scan storage paths before production. The current scan endpoint
+  includes a machine-specific local-copy behavior.
 
 ## Tests
 

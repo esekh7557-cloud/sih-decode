@@ -134,6 +134,10 @@
                 <input id="profile-age" name="age" type="number" min="0" max="120" placeholder="e.g. 32" />
               </div>
               <div class="field-group">
+                <label for="profile-dob">Date of birth</label>
+                <input id="profile-dob" name="dob" placeholder="DD/MM/YYYY" />
+              </div>
+              <div class="field-group">
                 <label for="profile-gender">Gender</label>
                 <select id="profile-gender" name="gender">
                   <option value="">Select</option>
@@ -167,6 +171,14 @@
               <div class="field-group">
                 <label for="profile-income">Annual family income (INR)</label>
                 <input id="profile-income" name="annual_income" type="number" min="0" placeholder="e.g. 250000" />
+              </div>
+              <div class="field-group">
+                <label for="profile-mobile">Mobile number</label>
+                <input id="profile-mobile" name="mobile" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number" />
+              </div>
+              <div class="field-group">
+                <label for="profile-address">Address</label>
+                <input id="profile-address" name="address" placeholder="House, village or locality" />
               </div>
               <div class="field-group">
                 <label for="profile-category">Social category</label>
@@ -231,14 +243,24 @@
             <label class="upload-zone" for="document-input">
               <span class="upload-icon">+</span>
               <strong>Add documents</strong>
-              <span>Upload Aadhaar, income proof, certificates, or other images</span>
+              <span>Upload one or more files, then choose the document type for each one</span>
               <small>PNG, JPG, JPEG, or WEBP</small>
             </label>
             <input id="document-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple hidden />
             <div class="document-list" id="document-list">
               <p class="empty-documents">No documents added yet.</p>
             </div>
-            <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled>Extract document details</button>
+            <section class="additional-data" id="additional-data" hidden>
+              <strong>Additional information found</strong>
+              <p>Saved for this session only. Review it before using it in an application.</p>
+              <div id="additional-data-list"></div>
+            </section>
+            <section class="saved-data" id="saved-data" hidden>
+              <strong>Extracted and saved details</strong>
+              <p>These values were saved to the current private session and copied into Your details.</p>
+              <div id="saved-data-list"></div>
+            </section>
+            <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled>Extract labelled documents</button>
             <p class="helper-text" id="scan-status">You can also complete the profile manually.</p>
           </section>
 

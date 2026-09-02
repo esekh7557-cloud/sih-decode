@@ -12,7 +12,7 @@ import os
 import time
 import uuid
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.profile import CitizenProfile
 
@@ -41,6 +41,7 @@ class Session:
         self.eligibility: list = []
         self.artifacts: List[str] = []  # file paths of generated PDFs
         self.scans: Dict[str, str] = {} # maps document category to absolute file path
+        self.document_extractions: List[Dict[str, Any]] = []  # reviewed extra fields, kept only for this session
         self.chat_history: List[Dict[str, str]] = [] # conversational fallback history for extraction
         self.created_at = time.time()
         self.last_active = time.time()

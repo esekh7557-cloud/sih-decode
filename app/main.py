@@ -367,6 +367,21 @@ async def scan(sid: str, body: ScanIn):
                 setattr(s.profile, k, v)
             except Exception:
                 pass
+
+    profile_fields = set(type(s.profile).model_fields)
+    ignored_extraction_fields = {"action", "questions", "document_type"}
+    extra_fields = {
+        key: value
+        for key, value in fields.items()
+        if key not in profile_fields and key not in ignored_extraction_fields and key != "aadhaar"
+    }
+    if extra_fields:
+        s.document_extractions.append(
+            {
+                "document_type": body.expected_type or "Document",
+                "fields": extra_fields,
+            }
+        )
                 
     if result.image_path:
         s.artifacts.append(result.image_path)
@@ -374,6 +389,7 @@ async def scan(sid: str, body: ScanIn):
         "action": "confirm",
         "message": get_phrase("confirm", s.language),
         "summary": fields,
+        "extra_fields": extra_fields,
         "language": s.language,
     }
 
