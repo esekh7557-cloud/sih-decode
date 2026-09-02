@@ -36,3 +36,32 @@ def test_live_guidance_application_uses_scanned_requirements():
         assert plan["missing_fields"] == ["course"]
     finally:
         store.wipe(session.id)
+
+
+def test_live_application_reuses_document_extracted_fields_before_asking():
+    session = store.create()
+    try:
+        start_live_application(
+            session.id,
+            LiveApplicationIn(title="Official scholarship", url="https://myscheme.gov.in/example"),
+        )
+        session.discovered_forms[LIVE_APPLICATION_KEY] = {
+            "title": "Scholarship application",
+            "url": "https://myscheme.gov.in/example/form",
+            "fields": [
+                {"key": "course", "label": "Course", "type": "text", "required": True},
+                {"key": "college", "label": "College", "type": "text", "required": True},
+            ],
+            "documents": ["College ID"],
+        }
+        session.document_extractions.append(
+            {"document_type": "College ID", "fields": {"course": "BSc Computer Science"}}
+        )
+
+        plan = live_application_readiness(session.id)
+
+        assert plan["fields"][0]["value"] == "BSc Computer Science"
+        assert plan["fields"][0]["missing"] is False
+        assert plan["missing_fields"] == ["college"]
+    finally:
+        store.wipe(session.id)

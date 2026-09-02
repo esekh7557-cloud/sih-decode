@@ -9,6 +9,7 @@ CERT_INC:
   processing: "7-15 working days"
   validity: "6 months"
   portal: goa_online
+  portal_url: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV07"
   automation_mapping: income_certificate
   documents:
     - name: Voter Id card - Id proof
@@ -26,6 +27,7 @@ RESIDENCE:
   processing: "15-30 days"
   validity: "Lifetime"
   portal: goa_online
+  portal_url: "https://services.goaonline.gov.in/"
   automation_mapping: residence_certificate
   documents:
     - name: Birth Certificate
@@ -42,6 +44,7 @@ CASTE:
   processing: "15-30 days"
   validity: "Lifetime"
   portal: goa_online
+  portal_url: "https://services.goaonline.gov.in/"
   automation_mapping: caste_certificate
   documents:
     - name: Birth Certificate

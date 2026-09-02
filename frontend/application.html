@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saarthi Application Preparation | JanSeva AI</title>
+    <link rel="stylesheet" href="/style.css?v=dashboard-2" />
+    <link rel="stylesheet" href="/application.css?v=application-3" />
+  </head>
+  <body class="application-body">
+    <div class="application-shell">
+      <header class="application-topbar">
+        <a class="application-brand" href="/" aria-label="Back to JanSeva dashboard">
+          <span class="application-brand-mark">JS</span>
+          <span>
+            <strong>JanSeva AI</strong>
+            <small>Digital citizen assistant</small>
+          </span>
+        </a>
+        <div class="application-topbar-actions">
+          <span class="application-session-status"><span class="status-dot"></span><span id="session-status">Secure session active</span></span>
+          <a class="secondary-button" href="/">Back to dashboard</a>
+        </div>
+      </header>
+
+      <main class="application-main">
+        <section class="application-hero">
+          <div>
+            <p class="eyebrow">SAARTHI APPLICATION PREPARATION</p>
+            <h1 id="application-page-title">Prepare your official application</h1>
+            <p>Saarthi collects the portal requirements, extracts details from your documents, and fills only the information you review. You stay in control of login, payment, and final submission.</p>
+          </div>
+          <div class="application-privacy-card">
+            <strong>Human approval required</strong>
+            <span>Passwords, OTPs, CAPTCHAs, payments, and final submission stay with you.</span>
+          </div>
+        </section>
+
+        <div class="application-alert" id="application-alert" role="status" hidden></div>
+
+        <section class="application-layout" aria-label="Application preparation steps">
+          <aside class="application-progress" aria-label="Application progress">
+            <p class="eyebrow">YOUR JOURNEY</p>
+            <ol>
+              <li class="active" id="progress-portal"><span>1</span><div><strong>Official portal</strong><small>Log in and open the form</small></div></li>
+              <li id="progress-documents"><span>2</span><div><strong>Documents</strong><small>Upload and extract evidence</small></div></li>
+              <li id="progress-details"><span>3</span><div><strong>Missing details</strong><small>Answer what documents do not show</small></div></li>
+              <li id="progress-review"><span>4</span><div><strong>Review and fill</strong><small>Approve values before autofill</small></div></li>
+              <li id="progress-submit"><span>5</span><div><strong>Submit yourself</strong><small>Pay and submit on the portal</small></div></li>
+            </ol>
+          </aside>
+
+          <div class="application-workspace">
+            <section class="application-panel" id="application-portal-panel">
+              <div class="application-panel-heading">
+                <div>
+                  <p class="eyebrow" id="application-step-eyebrow">STEP 1</p>
+                  <h2 id="application-portal-title">Loading official application...</h2>
+                </div>
+                <span class="application-badge" id="portal-status">Preparing</span>
+              </div>
+              <div id="application-flow"></div>
+            </section>
+
+            <section class="application-panel" id="application-documents-panel" hidden>
+              <div class="application-panel-heading">
+                <div>
+                  <p class="eyebrow">STEP 2</p>
+                  <h2>Upload required documents</h2>
+                </div>
+                <span class="count-pill" id="document-count">0 files</span>
+              </div>
+              <p class="muted" id="document-instructions">The official form requirements will appear here after Saarthi checks the portal.</p>
+              <section class="application-document-request" id="application-document-request" hidden>
+                <strong id="application-document-title">Documents required for your application</strong>
+                <ul id="application-document-requirements"></ul>
+              </section>
+              <label class="upload-zone" for="document-input">
+                <span class="upload-icon">+</span>
+                <strong>Add documents</strong>
+                <span>Upload one or more document images and label each one</span>
+                <small>PNG, JPG, JPEG, or WEBP</small>
+              </label>
+              <input id="document-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple hidden />
+              <div class="document-list" id="document-list"><p class="empty-documents">No documents added yet.</p></div>
+              <section class="additional-data" id="additional-data" hidden>
+                <strong>Additional information found</strong>
+                <p>Review these values before using them in an application.</p>
+                <div id="additional-data-list"></div>
+              </section>
+              <section class="saved-data" id="saved-data" hidden>
+                <strong>Extracted and saved details</strong>
+                <p>These values were saved to this private session and used in the application plan.</p>
+                <div id="saved-data-list"></div>
+              </section>
+              <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled>Extract labelled documents</button>
+              <button class="primary-button full-width" id="continue-details-button" type="button">Continue to missing details</button>
+              <p class="helper-text" id="scan-status">Add and label documents when the portal lists them.</p>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="application-footer">
+        Saarthi assists with preparation. Always verify the official portal, uploaded files, payment amount, and acknowledgement number yourself.
+      </footer>
+    </div>
+    <script src="/application.js?v=application-3"></script>
+  </body>
+</html>

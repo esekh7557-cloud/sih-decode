@@ -304,6 +304,7 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
 .compact-panel { padding: 22px; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 19px; }
 .panel-heading .muted { margin: 6px 0 0; }
+.sample-profile-note { margin: 6px 0 0; color: #9a641d; font-size: 11px; font-weight: 700; }
 .muted { color: var(--muted); font-size: 13px; line-height: 1.55; }
 .online-pill, .count-pill {
   display: inline-block;
@@ -323,6 +324,11 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
 .chat-message strong { display: block; margin-bottom: 4px; font-size: 13px; }
 .chat-message p { margin: 0; font-size: 13px; line-height: 1.55; }
 .assistant-message > div { max-width: 82%; padding: 12px 14px; background: #f0f4ff; border-radius: 4px 14px 14px; }
+.choice-message > div { width: min(82%, 520px); }
+.chat-choice-grid { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.chat-choice-button { padding: 8px 11px; color: var(--blue); border: 1px solid #b7c9f5; border-radius: 999px; background: #fff; font-size: 12px; font-weight: 750; cursor: pointer; }
+.chat-choice-button:hover, .chat-choice-button:focus-visible { color: #fff; background: var(--blue); }
+.chat-choice-button:disabled { opacity: .55; cursor: default; }
 .user-message { justify-content: flex-end; }
 .user-message > div { max-width: 82%; padding: 11px 13px; color: #fff; background: var(--blue); border-radius: 14px 4px 14px 14px; }
 .avatar {
@@ -465,6 +471,13 @@ input:focus, select:focus { border-color: #7796ef; box-shadow: 0 0 0 3px rgba(40
 .service-meta span { padding: 4px 7px; color: #4d5d77; border-radius: 6px; background: #f0f4f9; font-size: 11px; }
 .service-checklist ul { margin: 0; padding-left: 18px; color: #52627c; font-size: 12px; line-height: 1.65; }
 .saarthi-apply-button { width: 100%; margin-top: 14px; }
+.application-page { margin-top: 24px; padding: 24px; border: 1px solid #d5e1f6; border-radius: var(--radius); background: #f8fbff; box-shadow: var(--shadow); }
+.application-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.application-page-header h2 { margin: 0; font-size: 23px; letter-spacing: -.03em; }
+.application-page-header .muted { max-width: 720px; margin: 7px 0 0; }
+.application-page-flow { display: grid; gap: 18px; }
+.application-page-flow > #documents { margin: 0; }
+.application-page-flow > #service-checklist { margin: 0; padding: 0; border: 0; }
 .saarthi-application-flow { display: grid; gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid #bcd1fc; border-radius: 12px; background: linear-gradient(145deg, #f8fbff, #eef5ff); }
 .saarthi-application-flow h3, .saarthi-application-flow h4 { margin: 0; color: #243a68; }
 .saarthi-application-flow h3 { font-size: 15px; }
@@ -575,6 +588,8 @@ footer span:first-child { color: #53647e; font-weight: 800; }
   .topbar, .welcome-card { flex-direction: column; }
   .topbar-actions { width: 100%; align-items: end; justify-content: space-between; }
   .dashboard-grid { grid-template-columns: 1fr; }
+  .application-page-header { flex-direction: column; }
+  .application-page-header .secondary-button { width: 100%; }
 }
 
 @media (max-width: 540px) {

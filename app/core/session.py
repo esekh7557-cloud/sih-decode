@@ -14,7 +14,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from app.core.profile import CitizenProfile
+from app.core.profile import CitizenProfile, sample_profile
 
 log = logging.getLogger("janseva.audit")
 
@@ -37,7 +37,7 @@ class Session:
         self.state: State = State.GREET
         self.language = "en"
         self.service_id: Optional[str] = None
-        self.profile = CitizenProfile()
+        self.profile = sample_profile()
         self.eligibility: list = []
         self.artifacts: List[str] = []  # file paths of generated PDFs
         self.scans: Dict[str, str] = {} # maps document category to absolute file path
@@ -55,6 +55,8 @@ class Session:
         # it still needs to answer that intent. Values are merged into the
         # normal profile only after the citizen sends a follow-up answer.
         self.assistant_context: Dict[str, Any] = {}
+        self.pdf_form_path: Optional[str] = None
+        self.pdf_form_fields: list[Dict[str, Any]] = []
         self.created_at = time.time()
         self.last_active = time.time()
         self.completed = False
@@ -86,8 +88,10 @@ class SessionStore:
         for sid in to_wipe:
             self.wipe(sid, status="timeout")
 
-    def create(self) -> Session:
+    def create(self, *, sample: bool = True) -> Session:
         s = Session()
+        if not sample:
+            s.profile = CitizenProfile()
         self._sessions[s.id] = s
         return s
 

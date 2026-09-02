@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JanSeva AI | Citizen Dashboard</title>
   <meta name="description" content="A multilingual citizen dashboard for documents, certificates, and government scheme guidance." />
-  <link rel="stylesheet" href="/style.css?v=dashboard-1" />
+  <link rel="stylesheet" href="/style.css?v=dashboard-2" />
 </head>
 <body>
   <div class="app-shell">
@@ -22,6 +22,7 @@
         <a class="active" href="#assistant">Assistant</a>
         <a href="#profile">My details</a>
         <a href="#documents">Documents</a>
+        <a href="/pdf-filler">PDF Form Filler</a>
         <a href="#schemes">Scheme matches</a>
         <a href="#services">Services</a>
       </nav>
@@ -122,6 +123,7 @@
                 <p class="eyebrow">STEP 1</p>
                 <h2>Your details</h2>
                 <p class="muted">These details help the assistant make relevant, explainable recommendations.</p>
+                <p class="sample-profile-note">Starter sample details are loaded for local testing. Replace them before a real application.</p>
               </div>
               <button class="link-button" id="check-eligibility-button" type="button">Check eligibility</button>
             </div>
@@ -290,6 +292,18 @@
         </div>
       </section>
 
+      <section class="application-page" id="application-page" hidden aria-labelledby="application-page-title">
+        <div class="application-page-header">
+          <div>
+            <p class="eyebrow">SAARTHI APPLICATION PREPARATION</p>
+            <h2 id="application-page-title">Prepare your official application</h2>
+            <p class="muted">Saarthi collects and reviews your information before it fills the official portal. You remain in control of login, payment, and final submission.</p>
+          </div>
+          <button class="secondary-button" id="application-page-back" type="button">Back to dashboard</button>
+        </div>
+        <div class="application-page-flow" id="application-page-flow"></div>
+      </section>
+
       <section class="panel schemes-panel" id="schemes">
         <div class="panel-heading">
           <div>
@@ -331,6 +345,6 @@
     </section>
   </div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
-  <script src="/app.js?v=dashboard-1"></script>
+  <script src="/app.js?v=dashboard-2"></script>
 </body>
 </html>

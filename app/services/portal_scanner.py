@@ -74,12 +74,17 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
           const unique = baseKey + '|' + type;
           if (seen.has(unique) && type !== 'radio' && type !== 'checkbox') return;
           seen.add(unique);
+          const optionLabel = type === 'radio' || type === 'checkbox'
+            ? clean((el.closest('label') || {}).innerText || el.value || label)
+            : '';
           fields.push({
             key: baseKey,
             label,
             type,
             required: !!(el.required || el.getAttribute('aria-required') === 'true' || /required|mandatory/i.test((el.closest('tr, .form-group, .field, .row') || {}).innerText || '')),
-            options: type === 'select' ? Array.from(el.options).filter(o => o.value).map(o => clean(o.text)).slice(0, 30) : []
+            options: type === 'select'
+              ? Array.from(el.options).filter(o => o.value).map(o => clean(o.text)).slice(0, 30)
+              : (optionLabel ? [optionLabel] : [])
           });
         });
         const documents = new Set();
@@ -100,7 +105,22 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
     )
 
     fields, used_keys = [], set()
-    for index, item in enumerate(data.get("fields", []), start=1):
+    grouped_controls = {}
+    for item in data.get("fields", []):
+        item_type = str(item.get("type", "text"))
+        raw_key = str(item.get("key") or item.get("label") or "")
+        if item_type in {"radio", "checkbox"}:
+            group_key = (raw_key, item_type)
+            if group_key in grouped_controls:
+                existing = grouped_controls[group_key]
+                existing["options"] = list(dict.fromkeys(existing.get("options", []) + item.get("options", [])))
+                existing["required"] = existing.get("required", False) or bool(item.get("required"))
+                continue
+            grouped_controls[group_key] = dict(item)
+        fields.append(item)
+
+    normalised_fields, used_keys = [], set()
+    for index, item in enumerate(fields, start=1):
         label = str(item.get("label") or "").strip()
         key = _key(str(item.get("key") or label), f"field_{index}")
         original = key
@@ -109,7 +129,7 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
             key = f"{original}_{suffix}"
             suffix += 1
         used_keys.add(key)
-        fields.append({
+        normalised_fields.append({
             "key": key,
             "label": label,
             "type": item.get("type", "text"),
@@ -119,6 +139,6 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
     return {
         "url": str(data.get("url") or driver.current_url),
         "title": str(data.get("title") or driver.title),
-        "fields": fields,
+        "fields": normalised_fields,
         "documents": [str(item) for item in data.get("documents", []) if str(item).strip()],
     }

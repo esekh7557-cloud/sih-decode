@@ -8,7 +8,11 @@ import re
 from typing import List, Optional
 
 from datetime import datetime
+from pathlib import Path
 from pydantic import BaseModel, Field, model_validator
+import yaml
+
+_SAMPLE_PROFILE_PATH = Path(__file__).resolve().parent.parent / "data" / "sample_profile.yaml"
 
 # ---------------------------------------------------------------------------
 # Verhoeff checksum (the algorithm used by Aadhaar numbers)
@@ -207,3 +211,14 @@ class CitizenProfile(BaseModel):
             "id_proof_no": self.id_proof_no or (f"XXXX XXXX {self.aadhaar_last4}" if self.aadhaar_last4 else ""),
             "certify": self.certify or "click it"
         }
+
+
+def sample_profile() -> CitizenProfile:
+    """Load the editable local starter profile for new demo sessions."""
+    try:
+        with open(_SAMPLE_PROFILE_PATH, encoding="utf-8") as handle:
+            values = yaml.safe_load(handle) or {}
+        allowed = set(CitizenProfile.model_fields)
+        return CitizenProfile.model_validate({key: value for key, value in values.items() if key in allowed})
+    except (OSError, TypeError, ValueError, yaml.YAMLError):
+        return CitizenProfile()

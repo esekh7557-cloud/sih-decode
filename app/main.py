@@ -8,10 +8,13 @@ Responses follow the kiosk action protocol:
 import os
 import re
 import shutil
+import subprocess
 import time
 import importlib
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.error import URLError
+from urllib.parse import quote, urlparse
+from urllib.request import Request as UrlRequest, urlopen
 
 # Load .env file automatically
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -23,7 +26,7 @@ if _env_path.exists():
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, Query
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,7 +45,7 @@ from app.services.catalog import build_checklist, get_service, list_services
 from app.services.web_search import get_live_guidance, wants_live_search
 
 PORTAL_URLS = {
-    "goa_online": "https://goaonline.gov.in/Appln/UIP/DeptServices?__ns=Revenue",
+    "goa_online": "https://services.goaonline.gov.in/",
 }
 
 DEFAULT_APPLICATION_FIELDS = ("name", "dob", "mobile", "address")
@@ -55,6 +58,21 @@ ASSISTANT_FIELD_LABELS = {
     "occupation": "whether you are a student",
     "annual_income": "your annual family income",
     "caste_category": "your social category",
+}
+
+ASSISTANT_FIELD_OPTIONS = {
+    "gender": [("female", "Female"), ("male", "Male"), ("other", "Other")],
+    "state": [("Goa", "Goa"), ("Maharashtra", "Maharashtra"), ("Gujarat", "Gujarat"), ("Other", "Other")],
+    "occupation": [
+        ("farmer", "Farmer"),
+        ("salaried", "Salaried employee"),
+        ("artisan", "Artisan / craftsperson"),
+        ("small_business", "Small-business owner"),
+        ("unemployed", "Unemployed"),
+        ("pensioner", "Pensioner"),
+        ("student", "Student"),
+    ],
+    "caste_category": [(value, value.title() if value != "MINORITY" else "Minority") for value in ("GENERAL", "SC", "ST", "OBC", "NT", "VJNT", "SBC", "MINORITY")],
 }
 
 # These are the minimum profile facts needed to make a useful scholarship
@@ -90,14 +108,61 @@ def root():
     return FileResponse(str(_FRONTEND / "index.html"), headers=NO_CACHE)
 
 
+@app.get("/pdf-filler", include_in_schema=False)
+def pdf_filler_page():
+    return FileResponse(str(_FRONTEND / "pdf-filler.html"), headers=NO_CACHE)
+
+
+@app.get("/pdf-filler.html", include_in_schema=False)
+def pdf_filler_html_page():
+    return FileResponse(str(_FRONTEND / "pdf-filler.html"), headers=NO_CACHE)
+
+
+@app.get("/application", include_in_schema=False)
+def application_page():
+    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+
+
+@app.get("/application.html", include_in_schema=False)
+def application_html_page():
+    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+
+
+@app.get("/application/{step}", include_in_schema=False)
+def application_step_page(step: str):
+    if step not in {"portal", "documents", "details", "review", "submit"}:
+        raise HTTPException(404, "Unknown Saarthi application step")
+    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+
+
 @app.get("/style.css", include_in_schema=False)
 def serve_css():
     return FileResponse(str(_FRONTEND / "style.css"), media_type="text/css", headers=NO_CACHE)
 
 
+@app.get("/application.css", include_in_schema=False)
+def serve_application_css():
+    return FileResponse(str(_FRONTEND / "application.css"), media_type="text/css", headers=NO_CACHE)
+
+
 @app.get("/app.js", include_in_schema=False)
 def serve_js():
     return FileResponse(str(_FRONTEND / "app.js"), media_type="application/javascript", headers=NO_CACHE)
+
+
+@app.get("/application.js", include_in_schema=False)
+def serve_application_js():
+    return FileResponse(str(_FRONTEND / "application.js"), media_type="application/javascript", headers=NO_CACHE)
+
+
+@app.get("/pdf-filler.css", include_in_schema=False)
+def serve_pdf_filler_css():
+    return FileResponse(str(_FRONTEND / "pdf-filler.css"), media_type="text/css", headers=NO_CACHE)
+
+
+@app.get("/pdf-filler.js", include_in_schema=False)
+def serve_pdf_filler_js():
+    return FileResponse(str(_FRONTEND / "pdf-filler.js"), media_type="application/javascript", headers=NO_CACHE)
 
 
 
@@ -138,6 +203,60 @@ def _session(sid: str) -> Session:
     return s
 
 
+class PdfFormValuesIn(BaseModel):
+    values: Dict[str, Any]
+
+
+@app.post("/sessions/{sid}/pdf-filler/inspect")
+async def inspect_pdf_form(sid: str, file: UploadFile = File(...)):
+    """Store a user-provided PDF and return its fillable fields with suggestions."""
+    s = _session(sid)
+    filename = Path(file.filename or "form.pdf").name
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Please upload a PDF form")
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(413, "PDF forms must be smaller than 20 MB")
+    form_dir = _SCANS_DIR / sid / "pdf-forms"
+    form_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = form_dir / filename
+    stored_path.write_bytes(content)
+    from app.docgen.pdf_form_filler import inspect_pdf
+    try:
+        plan = inspect_pdf(stored_path, s.profile)
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, "This PDF could not be read. Upload a valid PDF form and try again.") from exc
+    if not plan["fields"]:
+        raise HTTPException(400, "This PDF has no fillable AcroForm fields. Please upload a fillable PDF form.")
+    s.pdf_form_path = str(stored_path)
+    s.pdf_form_fields = plan["fields"]
+    return plan
+
+
+@app.post("/sessions/{sid}/pdf-filler/fill")
+def fill_pdf_form(sid: str, body: PdfFormValuesIn):
+    """Fill only the reviewed PDF field values and return a download URL."""
+    s = _session(sid)
+    if not s.pdf_form_path or not Path(s.pdf_form_path).is_file():
+        raise HTTPException(400, "Inspect a PDF form before filling it")
+    from app.docgen.pdf_form_filler import fill_pdf
+    try:
+        output_path = fill_pdf(s.pdf_form_path, body.values, OUTPUT_DIR / "pdf-forms")
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, "The PDF could not be filled. Check the field values and try again.") from exc
+    s.artifacts.append(output_path)
+    return {
+        "status": "ready",
+        "filename": Path(output_path).name,
+        "download_url": "/output/pdf-forms/" + Path(output_path).name,
+        "message": "The PDF was filled with the values you reviewed. Download and verify it before submission.",
+    }
+
+
 # --- STATE 1: GREET ---------------------------------------------------------
 
 @app.post("/sessions")
@@ -149,6 +268,8 @@ def create_session():
         "title": get_phrase("greeting"),
         "options": [{"id": lang, "label": lang} for lang in SUPPORTED],
         "language": "en",
+        "profile": s.profile.model_dump(),
+        "sample_profile": True,
     }
 
 
@@ -785,6 +906,11 @@ async def citizen_assistant(sid: str, body: AssistantIn):
         "pending_request": {
             "intent": intent,
             "missing_fields": intent_missing,
+            "question_field": intent_missing[0] if intent_missing else None,
+            "question_options": [
+                {"value": value, "label": label}
+                for value, label in ASSISTANT_FIELD_OPTIONS.get(intent_missing[0], [])
+            ] if intent_missing else [],
         } if intent and intent_missing else None,
         "services": [{"id": key, "label": value["name"]} for key, value in available_services.items()],
         "application_service_id": application_service_id,
@@ -1023,6 +1149,39 @@ def _chrome_executable() -> str:
     raise HTTPException(500, "Google Chrome is required to open an official portal, but it was not found on this computer")
 
 
+def _reuse_running_chrome(url: str) -> bool:
+    """Open a tab in the existing automation browser so its login stays active."""
+    endpoint = "http://127.0.0.1:9222/json/new?" + quote(url, safe="")
+    try:
+        with urlopen(UrlRequest(endpoint, method="PUT"), timeout=1.5) as response:
+            return 200 <= response.status < 300
+    except (OSError, URLError):
+        return False
+
+
+def _launch_chrome(sid: str, url: str) -> None:
+    """Reuse one Chrome profile and preserve the portal's login cookies."""
+    if _reuse_running_chrome(url):
+        return
+
+    # This is intentionally stable across Saarthi session renewals. Creating
+    # a profile named after every in-memory session logs the citizen out when
+    # the development server reloads or the dashboard renews its session ID.
+    profile_dir = Path.cwd() / ".janseva-browser" / "portal-profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        _chrome_executable(),
+        "--new-window",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--remote-debugging-port=9222",
+        f"--user-data-dir={profile_dir}",
+        url,
+    ]
+    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    subprocess.Popen(command, shell=False, creationflags=creation_flags)
+
+
 def _mapping_for_service(service: dict) -> tuple[str | None, dict]:
     """Load a verified field mapping when the service declares one.
 
@@ -1094,6 +1253,17 @@ def _safe_application_value(field: str, value: Any) -> Any:
     return value
 
 
+def _extracted_application_values(session: Session) -> Dict[str, Any]:
+    """Combine document-only values so portal fields can reuse OCR results."""
+    values: Dict[str, Any] = {}
+    for extraction in session.document_extractions:
+        fields = extraction.get("fields", {}) if isinstance(extraction, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        values.update({key: value for key, value in fields.items() if value not in (None, "")})
+    return values
+
+
 @app.get('/sessions/{sid}/applications/{service_id}/readiness')
 def application_readiness(sid: str, service_id: str):
     """Return a configuration-driven, reviewable application plan."""
@@ -1102,6 +1272,7 @@ def application_readiness(sid: str, service_id: str):
     profile = s.profile.model_dump()
     mapping_name, mapping = _mapping_for_service(service)
     saved_details = s.application_details.get(service_id, {})
+    extracted_details = _extracted_application_values(s)
     discovered = s.discovered_forms.get(service_id, {})
     discovered_by_key = {
         str(field.get("key")): field
@@ -1112,6 +1283,8 @@ def application_readiness(sid: str, service_id: str):
     for key in _application_field_keys(service, mapping, discovered):
         discovered_field = discovered_by_key.get(key, {})
         value = saved_details.get(key, profile.get(key, ""))
+        if value in (None, ""):
+            value = extracted_details.get(key, "")
         if value in (None, "") and discovered_field:
             value = _profile_suggestion(str(discovered_field.get("label", "")), profile)
         required = bool(discovered_field.get("required")) if discovered_field and not mapping else True
@@ -1209,15 +1382,8 @@ def launch_browser_endpoint(sid: str, body: ApplicationServiceIn):
     url = _portal_url(service)
     if not url:
         raise HTTPException(400, "This service needs an official portal_url in services.yaml before it can be opened")
-    import subprocess
     try:
-        profile_dir = Path.cwd() / ".janseva-browser" / sid
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        chrome = _chrome_executable()
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", chrome, "--remote-debugging-port=9222", f"--user-data-dir={profile_dir}", url],
-            shell=False,
-        )
+        _launch_chrome(sid, url)
         return {
             "status": "success",
             "portal_url": url,
@@ -1277,6 +1443,7 @@ def _live_application_plan(s: Session) -> dict:
 
     profile = s.profile.model_dump()
     saved_details = s.application_details.get(LIVE_APPLICATION_KEY, {})
+    extracted_details = _extracted_application_values(s)
     discovered = s.discovered_forms.get(LIVE_APPLICATION_KEY, {})
     scanned_fields = [
         field for field in discovered.get("fields", [])
@@ -1295,6 +1462,8 @@ def _live_application_plan(s: Session) -> dict:
         key = str(field["key"])
         label = str(field.get("label") or key.replace("_", " ").capitalize())
         value = saved_details.get(key, profile.get(key, ""))
+        if value in (None, ""):
+            value = extracted_details.get(key, "")
         if value in (None, ""):
             value = _profile_suggestion(label, profile)
         required = bool(field.get("required", True))
@@ -1376,15 +1545,8 @@ def save_live_application_details(sid: str, body: ApplicationDetailsIn):
 def launch_live_application(sid: str):
     s = _session(sid)
     plan = _live_application_plan(s)
-    import subprocess
     try:
-        profile_dir = Path.cwd() / ".janseva-browser" / sid
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        chrome = _chrome_executable()
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", chrome, "--remote-debugging-port=9222", f"--user-data-dir={profile_dir}", plan["portal_url"]],
-            shell=False,
-        )
+        _launch_chrome(sid, plan["portal_url"])
         return {
             "status": "success",
             "portal_url": plan["portal_url"],

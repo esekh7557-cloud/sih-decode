@@ -1,0 +1,17 @@
+# Starter values for local demos and repeated development runs.
+# Replace these values before using Saarthi for a real government application.
+name: "Demo Citizen"
+dob: "01/01/2001"
+age: 25
+gender: "female"
+state: "Goa"
+district: "North Goa"
+occupation: "student"
+annual_income: 150000
+mobile: "9876543210"
+address: "Demo Address, Panaji"
+caste_category: "GENERAL"
+land_acres: 0
+employment_sector: "unorganized"
+house_type: "pucca"
+is_student: true

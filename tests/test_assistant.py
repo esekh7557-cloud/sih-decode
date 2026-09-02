@@ -9,7 +9,7 @@ async def _no_enrichment(profile, results, language):
 
 def test_scholarship_request_collects_missing_details_and_saves_them(monkeypatch):
     monkeypatch.setattr("app.main.enrich", _no_enrichment)
-    session = store.create()
+    session = store.create(sample=False)
     try:
         first = asyncio.run(citizen_assistant(session.id, AssistantIn(message="I want to get a scholarship")))
 

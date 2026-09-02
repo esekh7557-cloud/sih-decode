@@ -27,12 +27,14 @@ starts. It provides:
   session profile, and refreshes the scholarship matches.
 - Explainable scheme cards with eligibility reason, benefit, and application
   route.
+- A dedicated **PDF Form Filler** page at `/pdf-filler` that detects fillable
+  AcroForm fields, suggests values from the saved profile, lets the citizen
+  review them, and downloads a completed copy.
 - Certificate service checklists with documents, fee, processing time, and
   validity.
-- A configuration-driven **Apply with Saarthi** journey: collect missing
-  application fields, open the official portal for citizen login, review the
-  exact values to fill, then upload scanned documents after the citizen
-  reviews the portal form.
+- A configuration-driven, multi-page **Apply with Saarthi** journey: official
+  portal login, required documents, missing details, reviewed autofill, and
+  citizen-controlled upload/payment/submission each have a separate page.
 - Voice input and spoken assistant replies in supported browsers. The citizen
   presses **Finish speaking** before a voice request is sent.
 - An end-session control that removes tracked session data.
@@ -55,20 +57,20 @@ For a supported service:
 
 1. Ask for a named service (for example, “I need a residence certificate”) or
    select it in Services.
-2. Review the listed documents, upload and label available scans, then select
-   **Apply with Saarthi**.
-3. Enter any missing portal fields. Saarthi does not invent answers.
-4. Open the official portal, log in, complete any OTP/CAPTCHA, and open the
+2. Select **Apply with Saarthi** to open the dedicated portal-login page.
+3. Open the official portal, log in, complete any OTP/CAPTCHA, and open the
    correct application page yourself.
-5. Select **Scan opened form**. Saarthi reads the visible field labels,
+4. Confirm that you are logged in. Saarthi reads the visible field labels,
    required markers, dropdown choices, and upload-row labels from the local
-   browser, then adds newly discovered questions and documents to the plan.
-   It does not read passwords, OTPs, CAPTCHAs, or entered form values.
+   browser and moves to a separate required-documents page.
+5. Upload and label the requested documents. Saarthi extracts their usable
+   details, fills matching application fields, and moves to a separate page
+   that asks for each remaining answer one at a time.
 6. Review the masked application summary and explicitly ask Saarthi to fill
    the opened form when that service has a verified mapping. It stops before
    **Save & Proceed**.
-7. After reviewing the official form, start document upload. Verify the files
-   and submit the final application yourself on the government portal.
+7. On the final page, review the official form, start document upload, verify
+   the files, complete any payment, and submit the application yourself.
 
 The current catalog connects Income, Residence, and Caste Certificates for
 Goa Online. To add another service, add it to `app/data/services.yaml` with:
@@ -112,6 +114,9 @@ http://127.0.0.1:8000/docs for interactive API documentation.
   required for the Income Certificate flow's built-in Goa Online link.
 - JANSEVA_OUTPUT_DIR sets the generated document directory.
 - JANSEVA_BASE_URL sets the URL included in QR-code download fallbacks.
+- `app/data/sample_profile.yaml` contains the starter profile loaded into every
+  new local demo session, so development restarts do not require repeated
+  onboarding entry. Replace its clearly marked demo values before real use.
 
 The rule-based eligibility flow works without an OpenRouter key. Document
 image extraction currently requires it because the active scanner uses the AI
@@ -134,6 +139,8 @@ Vision implementation.
 | POST | /sessions/{id}/launch_browser | Open the official portal for citizen login |
 | POST | /sessions/{id}/automate_fill | Fill reviewed fields; stops before Save & Proceed |
 | POST | /sessions/{id}/automate_upload | Upload scanned documents after portal-form review |
+| POST | /sessions/{id}/pdf-filler/inspect | Read fields from an uploaded fillable PDF |
+| POST | /sessions/{id}/pdf-filler/fill | Create a reviewed, filled PDF for download |
 | DELETE | /sessions/{id} | End the session and wipe tracked artifacts |
 
 ## Current scope and safety

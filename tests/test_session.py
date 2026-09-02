@@ -19,6 +19,14 @@ def test_state_order_and_terminal_state():
     assert s.advance() == State.DELIVER  # cannot advance past the final state
 
 
+def test_new_session_loads_editable_sample_profile():
+    store = SessionStore()
+    s = store.create()
+    assert s.profile.name == "Demo Citizen"
+    assert s.profile.state == "Goa"
+    assert s.profile.occupation == "student"
+
+
 def test_restart_service_returns_to_identify():
     store = SessionStore()
     s = store.create()

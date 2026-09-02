@@ -2,6 +2,8 @@ const API = window.location.origin;
 const SESSION_STORAGE_KEY = "janseva.session.id";
 const ONBOARDING_STORAGE_KEY = "janseva.onboarding";
 const VOICE_STORAGE_KEY = "janseva.voice.enabled";
+const APPLICATION_DRAFT_STORAGE_KEY = "janseva.application.draft";
+const PORTAL_OPEN_STORAGE_KEY = "janseva.application.portal-open";
 
 let sessionId = null;
 let language = "en";
@@ -11,6 +13,11 @@ let activeServiceId = null;
 let activeApplicationServiceId = null;
 let activeApplicationType = null;
 let requiredApplicationDocuments = [];
+let applicationPageOpen = false;
+let documentsOriginalParent = null;
+let documentsOriginalNextSibling = null;
+let checklistOriginalParent = null;
+let checklistOriginalNextSibling = null;
 let speechEnabled = localStorage.getItem(VOICE_STORAGE_KEY) === "true";
 let recognition = null;
 let isListening = false;
@@ -483,6 +490,36 @@ function addMessage(role, text) {
   if (role !== "user") speakAssistant(text);
 }
 
+function addChoiceMessage(options = []) {
+  if (!options.length) return;
+  const article = document.createElement("article");
+  article.className = "chat-message assistant-message choice-message";
+  const avatar = document.createElement("span");
+  avatar.className = "avatar";
+  avatar.textContent = "AI";
+  const content = document.createElement("div");
+  const label = document.createElement("strong");
+  label.textContent = "Choose an option";
+  const choices = document.createElement("div");
+  choices.className = "chat-choice-grid";
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chat-choice-button";
+    button.textContent = option.label || option.value;
+    button.addEventListener("click", () => {
+      choices.querySelectorAll("button").forEach((choice) => { choice.disabled = true; });
+      askAssistant(option.value || option.label);
+    });
+    choices.appendChild(button);
+  });
+  content.append(label, choices);
+  article.append(avatar, content);
+  const chat = $("#chat-log");
+  chat.appendChild(article);
+  chat.scrollTop = chat.scrollHeight;
+}
+
 function numberValue(name) {
   const raw = $('[name="' + name + '"]').value.trim();
   return raw === "" ? null : Number(raw);
@@ -588,9 +625,15 @@ function renderSchemes(schemes) {
     apply.type = "button";
     apply.className = "primary-button scheme-apply-button";
     apply.textContent = "Apply with Saarthi";
-    apply.addEventListener("click", () => {
+    apply.addEventListener("click", async () => {
       $("#assistant").scrollIntoView({ behavior: "smooth", block: "start" });
-      askAssistant("I want to apply for " + scheme.scheme_name + " with Saarthi.");
+      apply.disabled = true;
+      apply.textContent = "Preparing application...";
+      const result = await askAssistant("I want to apply for " + scheme.scheme_name + " with Saarthi.", { autoApply: true });
+      if (result) {
+        apply.disabled = false;
+        apply.textContent = "Apply with Saarthi";
+      }
     });
     card.appendChild(apply);
     grid.appendChild(card);
@@ -647,9 +690,7 @@ function renderLiveGuidance(guidance, applicationServiceId = null) {
     const prepare = document.createElement("button");
     prepare.type = "button";
     prepare.className = "primary-button";
-    prepare.textContent = applicationServiceId
-      ? "Open portal and prepare with Saarthi"
-      : "Prepare this application with Saarthi";
+    prepare.textContent = "Apply with Saarthi";
     prepare.addEventListener("click", () => startLiveGuidedApplication(applicationServiceId, primarySource));
     actions.appendChild(prepare);
   }
@@ -791,7 +832,7 @@ function renderApplicationReview(container, plan, portalOpened) {
     try {
       const result = await api("/sessions/" + sessionId + "/automate_fill", "POST", { service_id: plan.service_id });
       showToast(result.message, "success");
-      renderDocumentUploadStep(container);
+      renderDocumentUploadStep(container, plan);
     } catch (error) {
       fill.disabled = false;
       fill.textContent = "Fill the reviewed form";
@@ -802,7 +843,7 @@ function renderApplicationReview(container, plan, portalOpened) {
   container.appendChild(review);
 }
 
-function renderDocumentUploadStep(container) {
+function renderDocumentUploadStep(container, plan = null) {
   const existing = container.querySelector(".upload-after-review");
   if (existing) return;
   const step = document.createElement("section");
@@ -823,8 +864,19 @@ function renderDocumentUploadStep(container) {
       showToast("Document upload started. Review the portal, then submit the application yourself.", "success");
       const finalNote = document.createElement("p");
       finalNote.className = "final-submission-note";
-      finalNote.textContent = "Final step: verify the uploaded files and submit the application yourself on the official portal.";
-      step.appendChild(finalNote);
+      finalNote.textContent = "Final step: verify the uploaded files, submit the application yourself on the official portal, and complete any payment yourself if the portal requests a fee. Saarthi never handles payment credentials or final submission.";
+      const finalAction = document.createElement("button");
+      finalAction.type = "button";
+      finalAction.className = "primary-button full-width";
+      finalAction.textContent = "Open official portal to review and submit";
+      finalAction.disabled = !plan || !plan.portal_url;
+      finalAction.addEventListener("click", () => {
+        if (plan && plan.portal_url) {
+          window.open(plan.portal_url, "_blank", "noopener,noreferrer");
+        }
+        showToast("Review the filled form and complete any payment yourself on the official portal.", "info");
+      });
+      step.append(finalNote, finalAction);
       upload.textContent = result.action === "uploading" ? "Uploading started" : "Upload documents";
     } catch (error) {
       upload.disabled = false;
@@ -858,8 +910,91 @@ function setApplicationDocumentRequirements(plan) {
   renderDocuments();
 }
 
+function restoreApplicationNode(node, parent, nextSibling) {
+  if (!node || !parent) return;
+  const next = nextSibling && nextSibling.parentNode === parent ? nextSibling : null;
+  parent.insertBefore(node, next);
+}
+
+function isApplicationPageRoute() {
+  return window.location.pathname === "/application" || window.location.pathname === "/application.html" || window.location.pathname.startsWith("/application/") || new URLSearchParams(window.location.search).get("view") === "application";
+}
+
+async function persistApplicationDraft() {
+  if (!selectedFiles.length) {
+    sessionStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY);
+    return;
+  }
+  try {
+    const draft = await Promise.all(selectedFiles.map(async (item) => ({
+      name: item.file.name,
+      type: item.file.type,
+      documentType: item.documentType || "",
+      data: await readFileAsDataUrl(item.file),
+    })));
+    sessionStorage.setItem(APPLICATION_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  } catch (_) {
+    sessionStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY);
+  }
+}
+
+function navigateToApplicationPage(parameters = {}) {
+  // Navigation must happen immediately from the user's click. The draft is
+  // best-effort and is restored by application.js on the new document.
+  void persistApplicationDraft();
+  const query = new URLSearchParams(parameters);
+  window.location.assign("/application/portal?" + query.toString());
+}
+
+function openApplicationPage() {
+  if (applicationPageOpen) return;
+  const page = $("#application-page");
+  const flow = $("#application-page-flow");
+  const documents = $("#documents");
+  const checklist = $("#service-checklist");
+  if (!page || !flow || !documents || !checklist) return;
+
+  documentsOriginalParent = documents.parentNode;
+  documentsOriginalNextSibling = documents.nextSibling;
+  checklistOriginalParent = checklist.parentNode;
+  checklistOriginalNextSibling = checklist.nextSibling;
+  flow.append(documents, checklist);
+  page.hidden = false;
+  $(".welcome-card").hidden = true;
+  $(".dashboard-grid").hidden = true;
+  $(".schemes-panel").hidden = true;
+  applicationPageOpen = true;
+}
+
+function closeApplicationPage() {
+  if (!applicationPageOpen) return;
+  const page = $("#application-page");
+  const flow = $("#application-page-flow");
+  const documents = $("#documents");
+  const checklist = $("#service-checklist");
+  restoreApplicationNode(checklist, checklistOriginalParent, checklistOriginalNextSibling);
+  restoreApplicationNode(documents, documentsOriginalParent, documentsOriginalNextSibling);
+  if (flow) flow.innerHTML = "";
+  if (page) page.hidden = true;
+  $(".welcome-card").hidden = false;
+  $(".dashboard-grid").hidden = false;
+  $(".schemes-panel").hidden = false;
+  applicationPageOpen = false;
+  documentsOriginalParent = null;
+  documentsOriginalNextSibling = null;
+  checklistOriginalParent = null;
+  checklistOriginalNextSibling = null;
+}
+
+function returnToDashboard() {
+  if (isApplicationPageRoute()) window.history.replaceState({}, "", "/");
+  closeApplicationPage();
+}
+
 function renderSaarthiApplication(plan) {
   setApplicationDocumentRequirements(plan);
+  const pageTitle = $("#application-page-title");
+  if (pageTitle) pageTitle.textContent = plan.service + " with Saarthi";
   const checklist = $("#service-checklist");
   let flow = checklist.querySelector(".saarthi-application-flow");
   if (flow) flow.remove();
@@ -1042,10 +1177,15 @@ async function openSaarthiApplication(serviceId = activeServiceId) {
     showToast("Choose a government service first.", "info");
     return;
   }
+  if (!isApplicationPageRoute()) {
+    navigateToApplicationPage({ service: serviceId });
+    return;
+  }
   try {
     const plan = await api("/sessions/" + sessionId + "/applications/" + encodeURIComponent(serviceId) + "/readiness");
+    openApplicationPage();
     renderSaarthiApplication(plan);
-    $("#service-checklist").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#application-page").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -1122,7 +1262,7 @@ function renderLiveApplicationReview(flow, plan) {
     try {
       const result = await api("/sessions/" + sessionId + "/live-application/automate-fill", "POST");
       showToast(result.message, "success");
-      renderDocumentUploadStep(flow);
+      renderDocumentUploadStep(flow, plan);
     } catch (error) {
       fill.disabled = false;
       fill.textContent = "Fill the reviewed form";
@@ -1135,6 +1275,8 @@ function renderLiveApplicationReview(flow, plan) {
 
 function renderLiveApplication(plan) {
   setApplicationDocumentRequirements(plan);
+  const pageTitle = $("#application-page-title");
+  if (pageTitle) pageTitle.textContent = plan.service + " with Saarthi";
   const checklist = $("#service-checklist");
   checklist.hidden = false;
   checklist.innerHTML = "";
@@ -1278,15 +1420,24 @@ async function startGenericLiveApplication(source) {
     return;
   }
   try {
+    if (!isApplicationPageRoute()) {
+      navigateToApplicationPage({
+        live: "1",
+        source_url: source.url,
+        source_title: source.title || "Official government application",
+      });
+      return;
+    }
     const plan = await api("/sessions/" + sessionId + "/live-application", "POST", {
       title: source.title || "Official government application",
       url: source.url,
     });
+    openApplicationPage();
     renderLiveApplication(plan);
     const result = await api("/sessions/" + sessionId + "/live-application/launch", "POST");
     openedPortalServices.add(plan.service_id);
     renderLiveApplication(plan);
-    $("#services").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#application-page").scrollIntoView({ behavior: "smooth", block: "start" });
     showToast(result.message, "success");
     addMessage("assistant", "The official portal is open. Log in yourself, open the application form, then choose ‘I am logged in — check requirements’. ");
   } catch (error) {
@@ -1300,15 +1451,20 @@ async function startLiveGuidedApplication(serviceId, source = null) {
     await startGenericLiveApplication(source);
     return;
   }
+  if (!isApplicationPageRoute()) {
+    navigateToApplicationPage({ service: serviceId });
+    return;
+  }
   try {
     await selectService(serviceId);
     const plan = await api("/sessions/" + sessionId + "/applications/" + encodeURIComponent(serviceId) + "/readiness");
+    openApplicationPage();
     renderSaarthiApplication(plan);
 
     const result = await api("/sessions/" + sessionId + "/launch_browser", "POST", { service_id: serviceId });
     openedPortalServices.add(serviceId);
     renderSaarthiApplication(plan);
-    $("#services").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#application-page").scrollIntoView({ behavior: "smooth", block: "start" });
     showToast(result.message, "success");
     addMessage(
       "assistant",
@@ -1316,6 +1472,33 @@ async function startLiveGuidedApplication(serviceId, source = null) {
     );
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+async function resumeApplicationRoute() {
+  if (!isApplicationPageRoute() || !sessionId) return;
+  const query = new URLSearchParams(window.location.search);
+  const serviceId = query.get("service");
+  if (serviceId) {
+    await startLiveGuidedApplication(serviceId);
+    return;
+  }
+  if (query.get("live") !== "1") {
+    returnToDashboard();
+    return;
+  }
+  try {
+    const plan = await api("/sessions/" + sessionId + "/live-application/readiness");
+    openApplicationPage();
+    renderLiveApplication(plan);
+    const result = await api("/sessions/" + sessionId + "/live-application/launch", "POST");
+    openedPortalServices.add(plan.service_id);
+    renderLiveApplication(plan);
+    $("#application-page").scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast(result.message, "success");
+  } catch (error) {
+    returnToDashboard();
+    showToast("This application page could not be restored: " + error.message, "error");
   }
 }
 
@@ -1568,7 +1751,7 @@ function normaliseExtractedValue(field, value) {
   return text;
 }
 
-async function askAssistant(message) {
+async function askAssistant(message, { autoApply = false } = {}) {
   const question = message.trim();
   if (!question) return;
   addMessage("user", question);
@@ -1583,18 +1766,26 @@ async function askAssistant(message) {
       await loadServices();
     }
     addMessage("assistant", result.reply);
+    if (result.pending_request && result.pending_request.question_options) {
+      addChoiceMessage(result.pending_request.question_options);
+    }
     renderSchemes(result.recommendations || []);
     renderLiveGuidance(result.live_guidance, result.application_service_id);
     if (result.application_service_id && !result.live_guidance) await selectService(result.application_service_id);
+    if (autoApply && (result.application_service_id || (result.live_guidance && result.live_guidance.sources && result.live_guidance.sources.length))) {
+      await startLiveGuidedApplication(result.application_service_id, (result.live_guidance && result.live_guidance.sources || [])[0] || null);
+    }
     if (result.saved_profile_fields && result.saved_profile_fields.length) {
       showToast("Saved from chat: " + result.saved_profile_fields.join(", ") + ".", "success");
     }
     if (result.profile_gaps && result.profile_gaps.length) {
       showToast("For better matches, add: " + result.profile_gaps.join(", ") + ".", "info");
     }
+    return result;
   } catch (error) {
     addMessage("assistant", "I could not process that request right now. Please check your details and try again.");
     showToast(error.message, "error");
+    return null;
   }
 }
 
@@ -1667,6 +1858,8 @@ async function endSession() {
   if (!sessionId || !window.confirm("End this session and erase its saved session data?")) return;
   try {
     await api("/sessions/" + sessionId, "DELETE");
+    if (isApplicationPageRoute()) window.history.replaceState({}, "", "/");
+    closeApplicationPage();
     sessionId = null;
     selectedFiles = [];
     additionalDocumentData = [];
@@ -1680,6 +1873,7 @@ async function endSession() {
     speechEnabled = false;
     localStorage.removeItem(SESSION_STORAGE_KEY);
     localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    localStorage.removeItem(PORTAL_OPEN_STORAGE_KEY);
     localStorage.setItem(VOICE_STORAGE_KEY, "false");
     $("#profile-form").reset();
     $("#chat-log").innerHTML = "";
@@ -1717,9 +1911,13 @@ async function startSession() {
     sessionId = session.session_id;
     localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
     language = "en";
-    onboardingStep = 0;
-    onboardingAnswers = {};
-    saveOnboardingState(false);
+    if (session.profile) {
+      restoreProfile(session.profile);
+    } else {
+      onboardingStep = 0;
+      onboardingAnswers = {};
+      saveOnboardingState(false);
+    }
   }
   $("#language-select").value = language;
   syncVoiceButton();
@@ -1728,6 +1926,7 @@ async function startSession() {
   updateReadiness();
   if (session.profile) resumeOnboarding(session.profile);
   else renderOnboardingStep();
+  await resumeApplicationRoute();
 }
 
 function bindEvents() {
@@ -1757,6 +1956,11 @@ function bindEvents() {
   $("#onboarding-next").addEventListener("click", () => advanceOnboarding().catch((error) => showToast(error.message, "error")));
   $("#onboarding-back").addEventListener("click", goBackOnboarding);
   $("#onboarding-end-session").addEventListener("click", endSession);
+  $("#application-page-back").addEventListener("click", returnToDashboard);
+  window.addEventListener("popstate", () => {
+    if (isApplicationPageRoute()) openApplicationPage();
+    else closeApplicationPage();
+  });
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
