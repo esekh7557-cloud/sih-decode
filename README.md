@@ -17,6 +17,8 @@ the rule-based eligibility result explainable and usable offline.
 - Aadhaar validation using the Verhoeff checksum and masking to the last four digits
 - AI Vision document extraction through OpenRouter
 - Deterministic scheme eligibility rules, with optional LLM enrichment clearly marked for manual verification
+- Citizen dashboard for profile entry, document upload, certificate checklists, and plain-language scheme questions
+- Profile-aware assistant endpoint that returns explainable scheme matches, missing details, and service guidance
 - Application and scheme-sheet generation as PDF when WeasyPrint is available, or printable HTML otherwise
 - CUPS printing with QR-code download fallback when no printer is available
 - Optional Selenium/Playwright/browser-use helpers for government portal workflows
@@ -138,6 +140,7 @@ The complete schema is available in `/docs`. The main endpoints are:
 | `POST` | `/sessions/{id}/scan` | Process uploaded document images |
 | `POST` | `/sessions/{id}/scan_chat` | Continue an extraction conversation |
 | `POST` | `/sessions/{id}/profile` | Save profile data and run eligibility checks |
+| `POST` | `/sessions/{id}/assistant` | Ask for scheme or certificate help using the saved citizen profile |
 | `POST` | `/sessions/{id}/confirm` | Generate and print/download documents |
 | `DELETE` | `/sessions/{id}` | Wipe the session and its tracked artifacts |
 | `POST` | `/api/extract` | Standalone AI document extraction |
@@ -190,6 +193,5 @@ those paths and verify the target portal's selectors before enabling it on a
 different kiosk. OTPs, CAPTCHAs, and final submissions should remain under
 human control.
 #   s i h - d e c o d e  
- #   s i h - d e c o d e  
  #   s i h - d e c o d e  
  

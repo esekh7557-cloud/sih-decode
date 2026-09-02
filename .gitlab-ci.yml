@@ -1,0 +1,9 @@
+stages:
+  - test
+
+test:
+  stage: test
+  image: python:3.11-slim
+  script:
+    - pip install --quiet -r requirements.txt -r requirements-dev.txt
+    - pytest -q

@@ -1,0 +1,120 @@
+"""Six-state kiosk session state machine with zero-PII audit logging.
+
+GREET -> IDENTIFY -> CHECKLIST -> SCAN -> FILL -> DELIVER
+
+Sessions live in memory only. wipe() deletes every artifact (scans, PDFs)
+and logs nothing but timestamp + service_id + status.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import time
+import uuid
+from enum import Enum
+from typing import Dict, List, Optional
+
+from app.core.profile import CitizenProfile
+
+log = logging.getLogger("janseva.audit")
+
+
+class State(str, Enum):
+    GREET = "GREET"
+    IDENTIFY = "IDENTIFY"
+    CHECKLIST = "CHECKLIST"
+    SCAN = "SCAN"
+    FILL = "FILL"
+    DELIVER = "DELIVER"
+
+
+_ORDER = [State.GREET, State.IDENTIFY, State.CHECKLIST, State.SCAN, State.FILL, State.DELIVER]
+
+
+class Session:
+    def __init__(self) -> None:
+        self.id = uuid.uuid4().hex
+        self.state: State = State.GREET
+        self.language = "hi"
+        self.service_id: Optional[str] = None
+        self.profile = CitizenProfile()
+        self.eligibility: list = []
+        self.artifacts: List[str] = []  # file paths of generated PDFs
+        self.scans: Dict[str, str] = {} # maps document category to absolute file path
+        self.chat_history: List[Dict[str, str]] = [] # conversational fallback history for extraction
+        self.created_at = time.time()
+        self.last_active = time.time()
+        self.completed = False
+
+    def advance(self) -> State:
+        """Move to the next state; stays at DELIVER once reached."""
+        idx = _ORDER.index(self.state)
+        if idx < len(_ORDER) - 1:
+            self.state = _ORDER[idx + 1]
+        return self.state
+
+    def restart_service(self) -> None:
+        """Citizen has another task: go back to IDENTIFY, keep language."""
+        self.state = State.IDENTIFY
+        self.service_id = None
+        self.completed = False
+
+
+class SessionStore:
+    """In-memory only. Nothing is ever persisted to disk or a database."""
+
+    def __init__(self) -> None:
+        self._sessions: Dict[str, Session] = {}
+
+    def cleanup(self, max_age: int = 1800) -> None:
+        """Sweep and wipe sessions inactive for max_age seconds to prevent memory leaks."""
+        now = time.time()
+        to_wipe = [sid for sid, s in self._sessions.items() if now - getattr(s, "last_active", s.created_at) > max_age]
+        for sid in to_wipe:
+            self.wipe(sid, status="timeout")
+
+    def create(self) -> Session:
+        self.cleanup()
+        s = Session()
+        self._sessions[s.id] = s
+        return s
+
+    def get(self, sid: str) -> Optional[Session]:
+        self.cleanup()
+        s = self._sessions.get(sid)
+        if s:
+            s.last_active = time.time()
+        return s
+
+    def wipe(self, sid: str, status: str = "abandoned") -> None:
+        """Delete the session, all citizen data and every generated file.
+
+        Audit log is zero-PII: timestamp + service_id + status only.
+        """
+        s = self._sessions.pop(sid, None)
+        if s is None:
+            return
+        for path in s.artifacts:
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except OSError:
+                pass
+                
+        # --- NEW: Physically shred the citizen's local scans folder ---
+        try:
+            import shutil
+            from pathlib import Path
+            scan_dir = Path.cwd() / "scans" / sid
+            if scan_dir.exists() and scan_dir.is_dir():
+                shutil.rmtree(scan_dir)
+        except OSError:
+            pass
+        # ---------------------------------------------------------------
+        
+        log.info(
+            "session_end ts=%s service=%s status=%s",
+            int(time.time()),
+            s.service_id or "-",
+            "completed" if s.completed else status,
+        )

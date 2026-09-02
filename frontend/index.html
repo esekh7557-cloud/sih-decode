@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JanSeva AI | Citizen Dashboard</title>
+  <meta name="description" content="A multilingual citizen dashboard for documents, certificates, and government scheme guidance." />
+  <link rel="stylesheet" href="/style.css?v=dashboard-1" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="JanSeva AI home">
+        <span class="brand-mark">JS</span>
+        <span>
+          <strong>JanSeva AI</strong>
+          <small>Citizen dashboard</small>
+        </span>
+      </a>
+
+      <nav class="side-nav" aria-label="Dashboard sections">
+        <a class="active" href="#assistant">Assistant</a>
+        <a href="#profile">My details</a>
+        <a href="#documents">Documents</a>
+        <a href="#schemes">Scheme matches</a>
+        <a href="#services">Services</a>
+      </nav>
+
+      <div class="privacy-card">
+        <span class="privacy-icon">Shield</span>
+        <strong>Your data stays protected</strong>
+        <p>Only the details needed for guidance are used. End the session to remove its saved data.</p>
+        <button class="text-button" id="end-session-button" type="button">End and erase session</button>
+      </div>
+
+      <div class="session-indicator">
+        <span class="status-dot"></span>
+        <span id="session-status">Starting secure session...</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">DIGITAL CITIZEN ASSISTANT</p>
+          <h1>Government services, made simpler.</h1>
+        </div>
+        <div class="topbar-actions">
+          <label class="language-select">
+            <span>Language</span>
+            <select id="language-select" aria-label="Choose language">
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="mr">Marathi</option>
+              <option value="gu">Gujarati</option>
+            </select>
+          </label>
+          <button class="outline-button" id="save-profile-button" type="button">Save my details</button>
+        </div>
+      </header>
+
+      <section class="welcome-card" id="assistant">
+        <div class="welcome-copy">
+          <span class="assistant-badge">AI ASSISTANT</span>
+          <h2>Hello, I am JanSeva.</h2>
+          <p>Tell me what you need. I can find suitable government schemes, explain certificate requirements, and help you prepare an application.</p>
+          <div class="prompt-chips" aria-label="Suggested questions">
+            <button type="button" data-prompt="Which schemes can I apply for?">Find schemes for me</button>
+            <button type="button" data-prompt="I need an income certificate.">I need a certificate</button>
+            <button type="button" data-prompt="Can I apply for PM-KISAN?">Ask about PM-KISAN</button>
+          </div>
+        </div>
+        <div class="citizen-summary">
+          <span class="summary-label">PROFILE READINESS</span>
+          <strong id="readiness-score">0%</strong>
+          <span id="readiness-text">Add details to get personalised guidance</span>
+          <div class="progress-track"><span id="readiness-bar"></span></div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <div class="primary-column">
+          <section class="panel chat-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">CONVERSATION</p>
+                <h2>Ask your assistant</h2>
+              </div>
+              <span class="online-pill">Online</span>
+            </div>
+            <div class="chat-log" id="chat-log" aria-live="polite">
+              <article class="chat-message assistant-message">
+                <span class="avatar">AI</span>
+                <div>
+                  <strong>JanSeva Assistant</strong>
+                  <p>Welcome. Start by adding your details or ask me about a scheme or government service.</p>
+                </div>
+              </article>
+            </div>
+            <form class="chat-composer" id="assistant-form">
+              <input id="assistant-input" autocomplete="off" placeholder="For example: Which schemes can I apply for?" />
+              <button type="submit" class="primary-button">Send <span aria-hidden="true">→</span></button>
+            </form>
+          </section>
+
+          <section class="panel" id="profile">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">STEP 1</p>
+                <h2>Your details</h2>
+                <p class="muted">These details help the assistant make relevant, explainable recommendations.</p>
+              </div>
+              <button class="link-button" id="check-eligibility-button" type="button">Check eligibility</button>
+            </div>
+
+            <form class="profile-form" id="profile-form">
+              <div class="field-group">
+                <label for="profile-name">Full name</label>
+                <input id="profile-name" name="name" placeholder="Enter your name" />
+              </div>
+              <div class="field-group">
+                <label for="profile-age">Age</label>
+                <input id="profile-age" name="age" type="number" min="0" max="120" placeholder="e.g. 32" />
+              </div>
+              <div class="field-group">
+                <label for="profile-gender">Gender</label>
+                <select id="profile-gender" name="gender">
+                  <option value="">Select</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-state">State</label>
+                <select id="profile-state" name="state">
+                  <option value="Goa">Goa</option>
+                  <option value="Maharashtra">Maharashtra</option>
+                  <option value="Gujarat">Gujarat</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-occupation">Occupation</label>
+                <select id="profile-occupation" name="occupation">
+                  <option value="">Select</option>
+                  <option value="farmer">Farmer</option>
+                  <option value="salaried">Salaried employee</option>
+                  <option value="artisan">Artisan / craftsperson</option>
+                  <option value="small_business">Small-business owner</option>
+                  <option value="unemployed">Unemployed</option>
+                  <option value="pensioner">Pensioner</option>
+                  <option value="student">Student</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-income">Annual family income (INR)</label>
+                <input id="profile-income" name="annual_income" type="number" min="0" placeholder="e.g. 250000" />
+              </div>
+              <div class="field-group">
+                <label for="profile-category">Social category</label>
+                <select id="profile-category" name="caste_category">
+                  <option value="">Select</option>
+                  <option value="GENERAL">General</option>
+                  <option value="SC">SC</option>
+                  <option value="ST">ST</option>
+                  <option value="OBC">OBC</option>
+                  <option value="NT">NT</option>
+                  <option value="VJNT">VJNT</option>
+                  <option value="SBC">SBC</option>
+                  <option value="MINORITY">Minority</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-land">Cultivable land (acres)</label>
+                <input id="profile-land" name="land_acres" type="number" min="0" step="0.1" placeholder="e.g. 2" />
+              </div>
+              <div class="field-group">
+                <label for="profile-sector">Employment sector</label>
+                <select id="profile-sector" name="employment_sector">
+                  <option value="">Select</option>
+                  <option value="organized">Organized</option>
+                  <option value="unorganized">Unorganized</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-house">Home type</label>
+                <select id="profile-house" name="house_type">
+                  <option value="">Select</option>
+                  <option value="pucca">Pucca</option>
+                  <option value="kutcha">Kutcha</option>
+                  <option value="homeless">No permanent home</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-child-age">Girl child age (optional)</label>
+                <input id="profile-child-age" name="girl_child_age" type="number" min="0" max="30" placeholder="e.g. 6" />
+              </div>
+              <div class="toggle-grid">
+                <label class="check-control"><input name="is_bpl" type="checkbox" /> <span>BPL card holder</span></label>
+                <label class="check-control"><input name="has_lpg_connection" type="checkbox" checked /> <span>Has LPG connection</span></label>
+                <label class="check-control"><input name="is_student" type="checkbox" /> <span>Student</span></label>
+                <label class="check-control"><input name="is_entrepreneur" type="checkbox" /> <span>Entrepreneur</span></label>
+                <label class="check-control"><input name="is_pregnant" type="checkbox" /> <span>Pregnant</span></label>
+                <label class="check-control"><input name="is_first_child" type="checkbox" /> <span>First child</span></label>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <div class="secondary-column">
+          <section class="panel compact-panel" id="documents">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">STEP 2</p>
+                <h2>Your documents</h2>
+              </div>
+              <span class="count-pill" id="document-count">0 files</span>
+            </div>
+            <label class="upload-zone" for="document-input">
+              <span class="upload-icon">+</span>
+              <strong>Add documents</strong>
+              <span>Upload Aadhaar, income proof, certificates, or other images</span>
+              <small>PNG, JPG, JPEG, or WEBP</small>
+            </label>
+            <input id="document-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple hidden />
+            <div class="document-list" id="document-list">
+              <p class="empty-documents">No documents added yet.</p>
+            </div>
+            <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled>Extract document details</button>
+            <p class="helper-text" id="scan-status">You can also complete the profile manually.</p>
+          </section>
+
+          <section class="panel compact-panel" id="services">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">STEP 3</p>
+                <h2>Government services</h2>
+              </div>
+            </div>
+            <p class="muted">Choose a service to see its documents, fee, and processing time.</p>
+            <div class="service-list" id="service-list"><p class="muted">Loading services...</p></div>
+            <div class="service-checklist" id="service-checklist" hidden></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel schemes-panel" id="schemes">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">PERSONALISED RESULTS</p>
+            <h2>Scheme matches for you</h2>
+            <p class="muted">Verified matches are based on transparent rules. AI suggestions require manual confirmation.</p>
+          </div>
+          <span class="count-pill" id="scheme-count">0 matches</span>
+        </div>
+        <div class="scheme-grid" id="scheme-grid">
+          <div class="empty-state">
+            <strong>Your recommendations will appear here.</strong>
+            <p>Add your details and choose “Check eligibility” or ask the assistant for schemes.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span>JanSeva AI</span>
+        <span>Explainable scheme guidance. Human verification for final applications.</span>
+      </footer>
+    </main>
+  </div>
+  <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  <script src="/app.js?v=dashboard-1"></script>
+</body>
+</html>
