@@ -15,9 +15,6 @@ from typing import Any, Dict, List, Union
 import re
 import httpx
 from PIL import Image
-from dotenv import load_dotenv
-
-load_dotenv()
 
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 

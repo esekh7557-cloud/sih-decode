@@ -175,7 +175,7 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
   font-weight: 650;
 }
 
-.outline-button, .primary-button, .secondary-button {
+.outline-button, .primary-button, .secondary-button, .voice-button, .mic-button {
   border-radius: 10px;
   font-weight: 750;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
@@ -186,6 +186,33 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
   color: var(--blue);
   border: 1px solid #c7d4fb;
   background: #fff;
+}
+
+.voice-button {
+  padding: 10px 13px;
+  color: #176d63;
+  border: 1px solid #b9e2db;
+  background: #effaf7;
+}
+
+.voice-button[aria-pressed="false"] {
+  color: #64748b;
+  border-color: var(--line);
+  background: #fff;
+}
+
+.mic-button {
+  padding: 10px 13px;
+  color: #176d63;
+  border: 1px solid #b9e2db;
+  background: #effaf7;
+}
+
+.mic-button.listening {
+  color: #fff;
+  border-color: #b73845;
+  background: #b73845;
+  box-shadow: 0 0 0 4px rgba(183,56,69,.13);
 }
 
 .primary-button {
@@ -203,7 +230,7 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
   background: var(--blue-soft);
 }
 
-.outline-button:hover, .primary-button:hover, .secondary-button:hover { transform: translateY(-1px); }
+.outline-button:hover, .primary-button:hover, .secondary-button:hover, .voice-button:hover, .mic-button:hover { transform: translateY(-1px); }
 .primary-button:hover { background: var(--blue-dark); }
 .full-width { width: 100%; }
 
@@ -312,6 +339,33 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
 }
 .chat-composer { display: flex; gap: 9px; padding-top: 15px; border-top: 1px solid var(--line); }
 .chat-composer input { flex: 1; min-width: 0; }
+
+.live-guidance {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #bcd9d4;
+  border-radius: 12px;
+  background: #f5fcfa;
+}
+.live-guidance-heading { display: grid; gap: 3px; }
+.live-guidance-heading span { color: #167466; font-size: 10px; font-weight: 850; letter-spacing: .09em; }
+.live-guidance-heading strong { font-size: 14px; }
+.live-guidance p { margin: 9px 0; color: #4f6770; font-size: 12px; line-height: 1.5; }
+.live-guidance ol { margin: 0 0 12px; padding-left: 20px; color: #405b64; font-size: 12px; line-height: 1.7; }
+.official-sources { display: grid; gap: 7px; }
+.official-source {
+  display: block;
+  padding: 10px;
+  color: #1d5fc3;
+  border: 1px solid #d7e7e4;
+  border-radius: 8px;
+  background: #fff;
+  text-decoration: none;
+}
+.official-source strong, .official-source span { display: block; }
+.official-source strong { font-size: 12px; }
+.official-source span { margin-top: 3px; color: #657b83; font-size: 11px; line-height: 1.4; }
+.official-source:hover { border-color: #77b8aa; }
 
 input, select {
   width: 100%;

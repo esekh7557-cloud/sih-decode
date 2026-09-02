@@ -55,6 +55,7 @@
               <option value="gu">Gujarati</option>
             </select>
           </label>
+          <button class="voice-button" id="voice-toggle" type="button" aria-pressed="true">Voice: On</button>
           <button class="outline-button" id="save-profile-button" type="button">Save my details</button>
         </div>
       </header>
@@ -99,8 +100,18 @@
             </div>
             <form class="chat-composer" id="assistant-form">
               <input id="assistant-input" autocomplete="off" placeholder="For example: Which schemes can I apply for?" />
+              <button type="button" class="mic-button" id="microphone-button" aria-label="Start speaking to the assistant">Speak</button>
               <button type="submit" class="primary-button">Send <span aria-hidden="true">→</span></button>
             </form>
+            <section class="live-guidance" id="live-guidance" hidden aria-live="polite">
+              <div class="live-guidance-heading">
+                <span>LIVE OFFICIAL GUIDANCE</span>
+                <strong>Application steps and websites</strong>
+              </div>
+              <p id="live-guidance-notice"></p>
+              <ol id="live-guidance-steps"></ol>
+              <div class="official-sources" id="official-sources"></div>
+            </section>
           </section>
 
           <section class="panel" id="profile">

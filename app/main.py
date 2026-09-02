@@ -35,6 +35,7 @@ from app.i18n.phrases import SUPPORTED, get_phrase
 from app.ocr.scanner import CONFIDENCE_THRESHOLD, get_scanner
 from app.printing.printer import make_qr, print_document
 from app.services.catalog import build_checklist, get_service, list_services
+from app.services.web_search import get_live_guidance, wants_live_search
 from app.agent.analyzer import analyze_form
 from app.agent.executor import execute_form_fill
 
@@ -281,9 +282,6 @@ async def scan(sid: str, body: ScanIn):
         scan_dir = Path.cwd() / "scans" / sid
         scan_dir.mkdir(parents=True, exist_ok=True)
         
-        data_dir = Path(r"C:\Users\Vedant\Desktop\data")
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
         for idx, img_item in enumerate(body.images):
             try:
                 # Handle both new format (dict/ImageItem) and old format (string)
@@ -313,12 +311,8 @@ async def scan(sid: str, body: ScanIn):
                 decoded_img = base64.b64decode(b64_data)
                 
                 image_path = scan_dir / clean_name
-                data_path = data_dir / clean_name
                 
                 with open(image_path, "wb") as f:
-                    f.write(decoded_img)
-                
-                with open(data_path, "wb") as f:
                     f.write(decoded_img)
                     
                 s.scans[clean_name] = str(image_path.absolute())
@@ -326,7 +320,17 @@ async def scan(sid: str, body: ScanIn):
                 print(f"Failed to save scan locally: {e}")
     # -------------------------------------------------
     
-    result = await get_scanner().scan(body.expected_type, images=raw_b64_images, chat_history=s.chat_history)
+    try:
+        result = await get_scanner().scan(
+            body.expected_type,
+            images=raw_b64_images,
+            chat_history=s.chat_history,
+        )
+    except Exception as e:
+        raise HTTPException(
+            502,
+            "Document extraction is unavailable. Check OPENROUTER_API_KEY and install the project dependencies.",
+        ) from e
     if result.confidence < CONFIDENCE_THRESHOLD:
         q = get_phrase("scan_request", s.language, doc=body.expected_type)
         s.chat_history.append({"role": "assistant", "content": q})
@@ -466,6 +470,10 @@ async def citizen_assistant(sid: str, body: AssistantIn):
     scheme_terms = ("scheme", "schemes", "yojana", "eligible", "eligibility", "benefit", "apply", "kisan", "awas", "ujjwala", "ayushman", "mudra", "scholarship")
 
     requested = _requested_matches(message, results)
+    live_guidance = None
+    if wants_live_search(message):
+        live_guidance = await get_live_guidance(message, s.profile.state)
+
     if requested:
         reply = (
             f"You appear eligible for {', '.join(item.scheme_name for item in requested)}. "
@@ -500,12 +508,19 @@ async def citizen_assistant(sid: str, body: AssistantIn):
             "Try asking: 'Which schemes can I apply for?' or 'I need an income certificate.'"
         )
 
+    if live_guidance:
+        if live_guidance["sources"]:
+            reply += " I found official websites and application steps below."
+        else:
+            reply += f" {live_guidance['notice']}"
+
     return {
         "action": "assistant",
         "reply": reply,
         "recommendations": [item.__dict__ for item in results],
         "profile_gaps": gaps,
         "services": [{"id": key, "label": value["name"]} for key, value in list_services(s.profile.state).items()],
+        "live_guidance": live_guidance,
         "language": s.language,
     }
 
