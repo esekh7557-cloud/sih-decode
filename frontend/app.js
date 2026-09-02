@@ -1,20 +1,43 @@
 const API = window.location.origin;
+const SESSION_STORAGE_KEY = "janseva.session.id";
+const ONBOARDING_STORAGE_KEY = "janseva.onboarding";
+const VOICE_STORAGE_KEY = "janseva.voice.enabled";
 
 let sessionId = null;
 let language = "en";
 let selectedFiles = [];
 let services = [];
 let activeServiceId = null;
-let speechEnabled = true;
+let activeApplicationServiceId = null;
+let activeApplicationType = null;
+let requiredApplicationDocuments = [];
+let speechEnabled = localStorage.getItem(VOICE_STORAGE_KEY) === "true";
 let recognition = null;
 let isListening = false;
 let voiceTranscript = "";
 let sendVoiceMessage = false;
 let additionalDocumentData = [];
 let savedProfileData = {};
+const openedPortalServices = new Set();
+let onboardingStep = 0;
+let onboardingAnswers = {};
+let onboardingRecognition = null;
+let onboardingListening = false;
+const ONBOARDING_STEPS = [
+  { key: "language", title: "Choose your language", copy: "Start with your preferred language. You can change it later from the dashboard." },
+  { key: "age", title: "What is your age?", copy: "This helps JanSeva find schemes that match your age group.", type: "number", placeholder: "Enter your age", min: "0", max: "120" },
+  { key: "gender", title: "What is your gender?", copy: "Choose the option you are most comfortable sharing.", type: "select", options: [["female", "Female"], ["male", "Male"], ["other", "Other"]] },
+  { key: "state", title: "Which state do you live in?", copy: "State information helps us show the right government services.", type: "select", options: [["Goa", "Goa"], ["Maharashtra", "Maharashtra"], ["Gujarat", "Gujarat"], ["Other", "Other"]] },
+  { key: "district", title: "Which district do you live in?", copy: "Enter your district as it appears on your official documents.", type: "text", placeholder: "Enter your district" },
+  { key: "occupation", title: "What is your occupation?", copy: "This helps us identify work-related benefits and schemes.", type: "select", options: [["farmer", "Farmer"], ["salaried", "Salaried employee"], ["artisan", "Artisan / craftsperson"], ["small_business", "Small-business owner"], ["unemployed", "Unemployed"], ["pensioner", "Pensioner"], ["student", "Student"]] },
+  { key: "annual_income", title: "What is your annual family income?", copy: "Enter the approximate total income of your family in Indian rupees.", type: "number", placeholder: "e.g. 250000", min: "0" },
+  { key: "caste_category", title: "What is your social category?", copy: "This helps improve scheme matches. Choose the option shown on your official documents.", type: "select", options: [["GENERAL", "General"], ["SC", "SC"], ["ST", "ST"], ["OBC", "OBC"], ["NT", "NT"], ["VJNT", "VJNT"], ["SBC", "SBC"], ["MINORITY", "Minority"]] },
+];
 const DOCUMENT_TYPES = [
   "Aadhaar Card",
   "PAN Card",
+  "Voter ID Card",
+  "Photograph",
   "Income Certificate",
   "Residence Certificate",
   "Caste Certificate",
@@ -34,6 +57,298 @@ async function api(path, method = "GET", body = null) {
     throw new Error(error.detail || "The server could not complete this request. Please try again.");
   }
   return response.json();
+}
+
+function saveOnboardingState(complete = false) {
+  if (!sessionId) return;
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({
+      sessionId,
+      step: onboardingStep,
+      answers: onboardingAnswers,
+      complete,
+    }));
+  } catch (error) {
+    // The server session remains the source of truth if browser storage is unavailable.
+  }
+}
+
+function readOnboardingState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ONBOARDING_STORAGE_KEY) || "null");
+    return saved && saved.sessionId === sessionId ? saved : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function syncVoiceButton() {
+  const button = $("#voice-toggle");
+  if (!button) return;
+  button.setAttribute("aria-pressed", String(speechEnabled));
+  button.textContent = speechEnabled ? "Voice: On" : "Voice: Off";
+}
+
+function profileInputSelector(key) {
+  return {
+    age: "#profile-age",
+    gender: "#profile-gender",
+    state: "#profile-state",
+    district: "#profile-district",
+    occupation: "#profile-occupation",
+    annual_income: "#profile-income",
+    caste_category: "#profile-category",
+  }[key];
+}
+
+function setProfileInputValue(key, value) {
+  const selector = profileInputSelector(key);
+  if (!selector || $(selector) === null || value === null || value === undefined) return;
+  $(selector).value = String(value);
+  updateReadiness();
+}
+
+function onboardingValue(key) {
+  const selector = profileInputSelector(key);
+  if (!selector || !$(selector)) return "";
+  return $(selector).value.trim();
+}
+
+function startOnboardingListening(input) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    showToast("Voice input is not supported in this browser. Please use Chrome or Edge.", "error");
+    return;
+  }
+  if (onboardingListening && onboardingRecognition) {
+    onboardingRecognition.stop();
+    return;
+  }
+  onboardingListening = true;
+  const button = $("#onboarding-mic");
+  if (button) {
+    button.textContent = "Listening...";
+    button.classList.add("listening");
+  }
+  onboardingRecognition = new Recognition();
+  onboardingRecognition.lang = recognitionLanguage();
+  onboardingRecognition.interimResults = true;
+  onboardingRecognition.maxAlternatives = 1;
+  onboardingRecognition.onresult = (event) => {
+    let transcript = "";
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      transcript += event.results[index][0].transcript;
+    }
+    input.value = transcript.trim();
+  };
+  onboardingRecognition.onerror = () => showToast("Voice input could not start. Please try again.", "error");
+  onboardingRecognition.onend = () => {
+    onboardingListening = false;
+    if (button) {
+      button.textContent = "Answer with voice";
+      button.classList.remove("listening");
+    }
+  };
+  try {
+    onboardingRecognition.start();
+  } catch (error) {
+    onboardingListening = false;
+    if (button) {
+      button.textContent = "Answer with voice";
+      button.classList.remove("listening");
+    }
+  }
+}
+
+function renderOnboardingStep() {
+  const backdrop = $("#onboarding");
+  const content = $("#onboarding-content");
+  const title = $("#onboarding-title");
+  const copy = $("#onboarding-copy");
+  const kicker = $("#onboarding-kicker");
+  const progress = $("#onboarding-progress-bar");
+  const next = $("#onboarding-next");
+  const back = $("#onboarding-back");
+  if (!backdrop || !content) return;
+  backdrop.hidden = false;
+  content.innerHTML = "";
+
+  if (onboardingStep >= ONBOARDING_STEPS.length) {
+    kicker.textContent = "SETUP COMPLETE";
+    title.textContent = "Your basic details are ready";
+    copy.textContent = "JanSeva can now personalise scheme matches and government-service guidance for you.";
+    progress.style.width = "100%";
+    const summary = document.createElement("div");
+    summary.className = "onboarding-summary";
+    const labels = { age: "Age", gender: "Gender", state: "State", district: "District", occupation: "Occupation", annual_income: "Annual family income", caste_category: "Social category" };
+    Object.entries(labels).forEach(([key, label]) => {
+      const row = document.createElement("div");
+      const name = document.createElement("span");
+      name.textContent = label;
+      const value = document.createElement("strong");
+      const raw = onboardingAnswers[key] ?? onboardingValue(key);
+      value.textContent = key === "annual_income" && raw !== "" ? "₹" + Number(raw).toLocaleString("en-IN") : (raw || "Not provided");
+      row.append(name, value);
+      summary.appendChild(row);
+    });
+    content.appendChild(summary);
+    next.textContent = "Continue to dashboard";
+    back.classList.remove("visible");
+    window.setTimeout(() => speakAssistant(title.textContent + ". " + copy.textContent), 0);
+    return;
+  }
+
+  const step = ONBOARDING_STEPS[onboardingStep];
+  kicker.textContent = onboardingStep === 0 ? "WELCOME" : `STEP ${onboardingStep} OF ${ONBOARDING_STEPS.length - 1}`;
+  title.textContent = step.title;
+  copy.textContent = step.copy;
+  progress.style.width = `${Math.round((onboardingStep / ONBOARDING_STEPS.length) * 100)}%`;
+  back.classList.toggle("visible", onboardingStep > 0);
+  next.textContent = onboardingStep === ONBOARDING_STEPS.length - 1 ? "Save my details" : "Continue";
+
+  if (step.key === "language") {
+    const field = document.createElement("div");
+    field.className = "onboarding-field";
+    const label = document.createElement("label");
+    label.textContent = "Preferred language";
+    const select = document.createElement("select");
+    select.id = "onboarding-language";
+    [["en", "English"], ["hi", "Hindi"], ["mr", "Marathi"], ["gu", "Gujarati"]].forEach(([value, text]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      option.selected = value === (onboardingAnswers.language || language);
+      select.appendChild(option);
+    });
+    field.append(label, select);
+    content.appendChild(field);
+    const voice = document.createElement("label");
+    voice.className = "onboarding-voice";
+    voice.innerHTML = '<input id="onboarding-voice-enabled" type="checkbox" /> <span><strong>Use voice assistance</strong>JanSeva can read guidance aloud and let you answer with your microphone. You can turn this off anytime.</span>';
+    voice.querySelector("input").checked = speechEnabled;
+    content.appendChild(voice);
+    select.addEventListener("change", () => { language = select.value; });
+  } else {
+    const field = document.createElement("div");
+    field.className = "onboarding-field";
+    const label = document.createElement("label");
+    label.htmlFor = "onboarding-input";
+    label.textContent = step.title;
+    let input;
+    if (step.type === "select") {
+      input = document.createElement("select");
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select an option";
+      input.appendChild(placeholder);
+      step.options.forEach(([value, text]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        input.appendChild(option);
+      });
+    } else {
+      input = document.createElement("input");
+      input.type = step.type || "text";
+      input.placeholder = step.placeholder || "Enter your answer";
+      if (step.min !== undefined) input.min = step.min;
+      if (step.max !== undefined) input.max = step.max;
+    }
+    input.id = "onboarding-input";
+    input.value = onboardingAnswers[step.key] ?? onboardingValue(step.key);
+    field.append(label, input);
+    content.appendChild(field);
+    const mic = document.createElement("button");
+    mic.type = "button";
+    mic.id = "onboarding-mic";
+    mic.className = "mic-button onboarding-mic";
+    mic.textContent = "Answer with voice";
+    mic.addEventListener("click", () => startOnboardingListening(input));
+    content.appendChild(mic);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        next.click();
+      }
+    });
+    window.setTimeout(() => input.focus(), 0);
+  }
+  window.setTimeout(() => speakAssistant(title.textContent + ". " + copy.textContent), 0);
+}
+
+function hideOnboarding() {
+  $("#onboarding").hidden = true;
+  saveOnboardingState(true);
+}
+
+async function advanceOnboarding() {
+  if (onboardingStep >= ONBOARDING_STEPS.length) {
+    hideOnboarding();
+    addMessage("assistant", "Your basic details are saved for this session. I am ready to help you find schemes and services.");
+    return;
+  }
+  const step = ONBOARDING_STEPS[onboardingStep];
+  let value;
+  if (step.key === "language") {
+    value = $("#onboarding-language").value;
+    if (!value) {
+      showToast("Please choose a language to continue.", "info");
+      return;
+    }
+    language = value;
+    $("#language-select").value = language;
+    const voiceChoice = $("#onboarding-voice-enabled");
+    speechEnabled = Boolean(voiceChoice && voiceChoice.checked);
+    localStorage.setItem(VOICE_STORAGE_KEY, String(speechEnabled));
+    syncVoiceButton();
+    try {
+      await api("/sessions/" + sessionId + "/language", "POST", { language });
+    } catch (error) {
+      showToast(error.message, "error");
+      return;
+    }
+  } else {
+    const input = $("#onboarding-input");
+    value = input.value.trim();
+    if (!value) {
+      input.focus();
+      showToast("Please answer this question to continue.", "info");
+      return;
+    }
+    if (step.key === "age" && (Number(value) < 0 || Number(value) > 120)) {
+      showToast("Please enter an age between 0 and 120.", "info");
+      return;
+    }
+    if (step.key === "annual_income" && Number(value) < 0) {
+      showToast("Annual family income cannot be negative.", "info");
+      return;
+    }
+    value = ["age", "annual_income"].includes(step.key) ? Number(value) : value;
+    setProfileInputValue(step.key, value);
+  }
+  onboardingAnswers[step.key] = value;
+  onboardingStep += 1;
+  saveOnboardingState(false);
+  if (onboardingStep === ONBOARDING_STEPS.length) {
+    try {
+      await saveProfile({ quiet: true });
+      saveOnboardingState(true);
+    } catch (error) {
+      onboardingStep -= 1;
+      saveOnboardingState(false);
+      showToast("Your details could not be saved yet: " + error.message, "error");
+      renderOnboardingStep();
+      return;
+    }
+  }
+  renderOnboardingStep();
+}
+
+function goBackOnboarding() {
+  if (onboardingStep <= 0) return;
+  onboardingStep -= 1;
+  saveOnboardingState(false);
+  renderOnboardingStep();
 }
 
 function showToast(message, type = "info") {
@@ -69,6 +384,7 @@ function speakAssistant(text) {
 
 function toggleSpeech() {
   speechEnabled = !speechEnabled;
+  localStorage.setItem(VOICE_STORAGE_KEY, String(speechEnabled));
   const button = $("#voice-toggle");
   button.setAttribute("aria-pressed", String(speechEnabled));
   button.textContent = speechEnabled ? "Voice: On" : "Voice: Off";
@@ -181,6 +497,7 @@ function profilePayload() {
     dob: $("#profile-dob").value.trim(),
     gender: $("#profile-gender").value,
     state: $("#profile-state").value,
+    district: $("#profile-district").value.trim(),
     occupation: $("#profile-occupation").value,
     annual_income: numberValue("annual_income"),
     mobile: $("#profile-mobile").value.trim(),
@@ -201,10 +518,10 @@ function profilePayload() {
 
 function updateReadiness() {
   const data = profilePayload();
-  const fields = [data.name, data.age, data.gender, data.state, data.occupation, data.annual_income];
+  const fields = [data.age, data.gender, data.state, data.district, data.occupation, data.annual_income, data.caste_category];
   const complete = fields.filter((value) => value !== null && value !== "").length;
   const percentage = Math.round((complete / fields.length) * 100);
-  const remaining = 6 - complete;
+  const remaining = fields.length - complete;
   $("#readiness-score").textContent = percentage + "%";
   $("#readiness-bar").style.width = percentage + "%";
   $("#readiness-text").textContent = percentage === 100
@@ -267,12 +584,22 @@ function renderSchemes(schemes) {
       detail.append(caption, text);
       card.appendChild(detail);
     });
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "primary-button scheme-apply-button";
+    apply.textContent = "Apply with Saarthi";
+    apply.addEventListener("click", () => {
+      $("#assistant").scrollIntoView({ behavior: "smooth", block: "start" });
+      askAssistant("I want to apply for " + scheme.scheme_name + " with Saarthi.");
+    });
+    card.appendChild(apply);
     grid.appendChild(card);
   });
 }
 
-function renderLiveGuidance(guidance) {
+function renderLiveGuidance(guidance, applicationServiceId = null) {
   const panel = $("#live-guidance");
+  const actions = $("#live-guidance-actions");
   if (!guidance) {
     panel.hidden = true;
     return;
@@ -284,6 +611,7 @@ function renderLiveGuidance(guidance) {
   const sources = $("#official-sources");
   steps.innerHTML = "";
   sources.innerHTML = "";
+  actions.innerHTML = "";
 
   (guidance.steps || []).forEach((step) => {
     const item = document.createElement("li");
@@ -304,6 +632,27 @@ function renderLiveGuidance(guidance) {
     link.append(title, snippet);
     sources.appendChild(link);
   });
+
+  const primarySource = (guidance.sources || [])[0];
+  if (primarySource && primarySource.url) {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "secondary-button";
+    open.textContent = "Open official site";
+    open.addEventListener("click", () => window.open(primarySource.url, "_blank", "noopener,noreferrer"));
+    actions.appendChild(open);
+  }
+
+  if (applicationServiceId || primarySource) {
+    const prepare = document.createElement("button");
+    prepare.type = "button";
+    prepare.className = "primary-button";
+    prepare.textContent = applicationServiceId
+      ? "Open portal and prepare with Saarthi"
+      : "Prepare this application with Saarthi";
+    prepare.addEventListener("click", () => startLiveGuidedApplication(applicationServiceId, primarySource));
+    actions.appendChild(prepare);
+  }
 }
 
 async function saveProfile({ quiet = false } = {}) {
@@ -366,9 +715,637 @@ async function selectService(serviceId) {
       list.appendChild(entry);
     });
     checklist.append(title, meta, list);
+    if (serviceId) {
+      const official = document.createElement("a");
+      official.className = "official-portal-link";
+      official.href = "#";
+      official.target = "_blank";
+      official.rel = "noopener noreferrer";
+      official.textContent = "Prepare application with Saarthi";
+      official.addEventListener("click", (event) => {
+        event.preventDefault();
+        openSaarthiApplication(serviceId);
+      });
+      const apply = document.createElement("button");
+      apply.type = "button";
+      apply.className = "primary-button saarthi-apply-button";
+      apply.textContent = "Apply with Saarthi";
+      apply.addEventListener("click", () => openSaarthiApplication(serviceId));
+      checklist.append(official, apply);
+    }
     addMessage("assistant", "I have prepared the checklist for " + summary.service + ". You can review it in the Services panel.");
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+function documentMatchesRequirement(type, requirement) {
+  const typeText = String(type || "").toLowerCase();
+  const requirementText = String(requirement || "").toLowerCase();
+  if (requirementText.includes("aadhaar")) return typeText.includes("aadhaar");
+  if (requirementText.includes("pan")) return typeText.includes("pan");
+  if (requirementText.includes("voter")) return typeText.includes("voter");
+  if (requirementText.includes("birth")) return typeText.includes("birth");
+  if (requirementText.includes("residence")) return typeText.includes("residence");
+  if (requirementText.includes("photograph")) return typeText.includes("photograph") || selectedFiles.some((item) => /photo|passport/.test(item.file.name.toLowerCase()));
+  return false;
+}
+
+function renderApplicationReview(container, plan, portalOpened) {
+  const review = document.createElement("section");
+  review.className = "application-review";
+  const heading = document.createElement("h4");
+  heading.textContent = "Review the details Saarthi will fill";
+  const note = document.createElement("p");
+  note.textContent = "Sensitive ID numbers are masked here. Correct any value in Your details or the missing-details form before continuing.";
+  const list = document.createElement("dl");
+  list.className = "review-list";
+  plan.fields.forEach((field) => {
+    const row = document.createElement("div");
+    const label = document.createElement("dt");
+    label.textContent = field.label;
+    const value = document.createElement("dd");
+    value.textContent = field.value || "Not provided";
+    row.append(label, value);
+    list.appendChild(row);
+  });
+  const confirm = document.createElement("label");
+  confirm.className = "check-control review-confirm";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  const text = document.createElement("span");
+  text.textContent = "I checked these details and want Saarthi to fill the opened official form.";
+  confirm.append(checkbox, text);
+  const fill = document.createElement("button");
+  fill.type = "button";
+  fill.className = "primary-button full-width";
+  fill.textContent = "Fill the reviewed form";
+  fill.disabled = !portalOpened;
+  fill.addEventListener("click", async () => {
+    if (!checkbox.checked) {
+      showToast("Please confirm that you reviewed the details first.", "info");
+      return;
+    }
+    fill.disabled = true;
+    fill.textContent = "Filling the official form...";
+    try {
+      const result = await api("/sessions/" + sessionId + "/automate_fill", "POST", { service_id: plan.service_id });
+      showToast(result.message, "success");
+      renderDocumentUploadStep(container);
+    } catch (error) {
+      fill.disabled = false;
+      fill.textContent = "Fill the reviewed form";
+      showToast(error.message, "error");
+    }
+  });
+  review.append(heading, note, list, confirm, fill);
+  container.appendChild(review);
+}
+
+function renderDocumentUploadStep(container) {
+  const existing = container.querySelector(".upload-after-review");
+  if (existing) return;
+  const step = document.createElement("section");
+  step.className = "upload-after-review";
+  const heading = document.createElement("h4");
+  heading.textContent = "After you review the form";
+  const copy = document.createElement("p");
+  copy.textContent = "Check every value in the official portal. When you are on its document-upload page, use this button to match and upload the documents you scanned. Saarthi will not submit the final application.";
+  const upload = document.createElement("button");
+  upload.type = "button";
+  upload.className = "secondary-button full-width";
+  upload.textContent = "I reviewed the form — upload documents";
+  upload.addEventListener("click", async () => {
+    upload.disabled = true;
+    upload.textContent = "Uploading scanned documents...";
+    try {
+      const result = await api("/sessions/" + sessionId + "/automate_upload", "POST");
+      showToast("Document upload started. Review the portal, then submit the application yourself.", "success");
+      const finalNote = document.createElement("p");
+      finalNote.className = "final-submission-note";
+      finalNote.textContent = "Final step: verify the uploaded files and submit the application yourself on the official portal.";
+      step.appendChild(finalNote);
+      upload.textContent = result.action === "uploading" ? "Uploading started" : "Upload documents";
+    } catch (error) {
+      upload.disabled = false;
+      upload.textContent = "I reviewed the form — upload documents";
+      showToast(error.message, "error");
+    }
+  });
+  step.append(heading, copy, upload);
+  container.appendChild(step);
+}
+
+function setApplicationDocumentRequirements(plan) {
+  activeApplicationServiceId = plan.service_id || null;
+  activeApplicationType = plan.application_type || "service";
+  requiredApplicationDocuments = Array.from(new Set((plan.documents || []).filter(Boolean)));
+  const request = $("#application-document-request");
+  const title = $("#application-document-title");
+  const list = $("#application-document-requirements");
+  if (!request || !title || !list) return;
+
+  request.hidden = requiredApplicationDocuments.length === 0;
+  list.innerHTML = "";
+  if (!requiredApplicationDocuments.length) return;
+
+  title.textContent = "Documents requested for " + (plan.service || "your application");
+  requiredApplicationDocuments.forEach((documentName) => {
+    const item = document.createElement("li");
+    item.textContent = documentName;
+    list.appendChild(item);
+  });
+  renderDocuments();
+}
+
+function renderSaarthiApplication(plan) {
+  setApplicationDocumentRequirements(plan);
+  const checklist = $("#service-checklist");
+  let flow = checklist.querySelector(".saarthi-application-flow");
+  if (flow) flow.remove();
+  flow = document.createElement("section");
+  flow.className = "saarthi-application-flow";
+  const title = document.createElement("h3");
+  title.textContent = plan.service + " with Saarthi";
+  const intro = document.createElement("p");
+  intro.textContent = "Complete the preparation below. You log in to the official portal, Saarthi fills only your reviewed answers, and you submit the final application yourself.";
+  const official = document.createElement("a");
+  official.className = "official-portal-link";
+  official.href = plan.portal_url || "#";
+  official.target = "_blank";
+  official.rel = "noopener noreferrer";
+  official.textContent = plan.portal_url ? "Official application portal ↗" : "Official portal link needs configuration";
+  flow.append(title, intro, official);
+  if (plan.form_scanned) {
+    const scanStatus = document.createElement("p");
+    scanStatus.className = "ready-message";
+    scanStatus.textContent = "Opened form scanned: " + ((plan.scanned_form && plan.scanned_form.title) || "application page") + ". Its required fields and document rows are included below.";
+    flow.appendChild(scanStatus);
+  }
+
+  const documents = document.createElement("section");
+  documents.className = "application-documents";
+  const docTitle = document.createElement("h4");
+  docTitle.textContent = "1. Required documents";
+  const docList = document.createElement("ul");
+  const knownTypes = Array.from(new Set(
+    (plan.uploaded_document_types || []).concat(selectedFiles.map((item) => item.documentType)).filter(Boolean)
+  ));
+  plan.documents.forEach((documentName) => {
+    const item = document.createElement("li");
+    const hasDocument = knownTypes.some((type) => documentMatchesRequirement(type, documentName));
+    item.className = hasDocument ? "document-ready" : "document-missing";
+    item.textContent = (hasDocument ? "Ready: " : "Needed: ") + documentName;
+    docList.appendChild(item);
+  });
+  const docNote = document.createElement("p");
+  docNote.textContent = "Upload and extract each available document above before the portal upload step. The authority may request additional evidence.";
+  const collect = document.createElement("button");
+  collect.type = "button";
+  collect.className = "secondary-button full-width";
+  collect.textContent = "Add and extract required documents";
+  collect.addEventListener("click", () => {
+    $("#documents").scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast("Add the listed documents, select their type, then choose Extract labelled documents.", "info");
+  });
+  documents.append(docTitle, docList, docNote, collect);
+  flow.appendChild(documents);
+
+  const details = document.createElement("section");
+  details.className = "application-details";
+  const detailsTitle = document.createElement("h4");
+  detailsTitle.textContent = "2. Remaining application details";
+  details.appendChild(detailsTitle);
+  if (plan.missing_fields.length) {
+    const copy = document.createElement("p");
+    copy.textContent = "Saarthi needs these answers before it can fill the official form. It will not invent any missing information.";
+    const form = document.createElement("form");
+    form.className = "application-detail-form";
+    plan.fields.filter((field) => field.missing).forEach((field) => {
+      const group = document.createElement("label");
+      group.className = "field-group";
+      group.textContent = field.label;
+      const input = document.createElement("input");
+      input.name = field.key;
+      input.required = true;
+      input.autocomplete = "off";
+      if (field.key === "email") input.type = "email";
+      else if (field.key === "mobile" || field.key === "pincode") input.inputMode = "numeric";
+      group.appendChild(input);
+      form.appendChild(group);
+    });
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "secondary-button full-width";
+    save.textContent = "Save remaining details";
+    form.appendChild(save);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const updates = Object.fromEntries(new FormData(form).entries());
+      try {
+        await api("/sessions/" + sessionId + "/applications/" + plan.service_id + "/details", "POST", { details: updates });
+        showToast("Application details saved. Please review them now.", "success");
+        await openSaarthiApplication(plan.service_id);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    });
+    details.append(copy, form);
+    flow.appendChild(details);
+    checklist.appendChild(flow);
+    return;
+  }
+  const ready = document.createElement("p");
+  ready.className = "ready-message";
+  ready.textContent = "All required form details are saved for this session.";
+  details.appendChild(ready);
+  flow.appendChild(details);
+
+  const login = document.createElement("section");
+  login.className = "portal-login-step";
+  const loginTitle = document.createElement("h4");
+  loginTitle.textContent = "3. Log in on the official portal";
+  const loginCopy = document.createElement("p");
+  loginCopy.textContent = "Open the official portal in a separate Saarthi browser window. Complete login, OTP, CAPTCHA, and open the correct application page yourself.";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "primary-button full-width";
+  open.textContent = "Open official portal and log in";
+  const loggedIn = document.createElement("button");
+  loggedIn.type = "button";
+  loggedIn.className = "secondary-button full-width";
+  loggedIn.textContent = plan.form_scanned ? "Show reviewed form details" : "I am logged in — check requirements";
+  loggedIn.disabled = !openedPortalServices.has(plan.service_id);
+  open.disabled = !plan.portal_url;
+  open.addEventListener("click", async () => {
+    open.disabled = true;
+    open.textContent = "Opening official portal...";
+    try {
+      const result = await api("/sessions/" + sessionId + "/launch_browser", "POST", { service_id: plan.service_id });
+      showToast(result.message, "success");
+      open.textContent = "Official portal opened";
+      openedPortalServices.add(plan.service_id);
+      loggedIn.disabled = false;
+    } catch (error) {
+      open.disabled = false;
+      open.textContent = "Open official portal and log in";
+      showToast(error.message, "error");
+    }
+  });
+  loggedIn.addEventListener("click", async () => {
+    if (!plan.form_scanned) {
+      loggedIn.disabled = true;
+      loggedIn.textContent = "Scanning opened form...";
+      try {
+        const scannedPlan = await api("/sessions/" + sessionId + "/applications/" + plan.service_id + "/scan-open-form", "POST");
+        showToast(scannedPlan.scan_message || "The opened form was scanned.", "success");
+        renderSaarthiApplication(scannedPlan);
+        return;
+      } catch (error) {
+        loggedIn.disabled = false;
+        loggedIn.textContent = "I am logged in — check requirements";
+        showToast(error.message, "error");
+        return;
+      }
+    }
+    if (plan.automation_available) {
+      if (!flow.querySelector(".application-review")) renderApplicationReview(flow, plan, true);
+      loggedIn.textContent = "Review shown below";
+      loggedIn.disabled = true;
+      flow.querySelector(".application-review").scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const manual = document.createElement("p");
+    manual.className = "automation-safety";
+    manual.textContent = "This service has no verified portal mapping yet. Use the official portal to enter the reviewed details and upload documents yourself.";
+    flow.appendChild(manual);
+    loggedIn.textContent = "Use portal manually";
+    loggedIn.disabled = true;
+  });
+  login.append(loginTitle, loginCopy, open, loggedIn);
+  flow.appendChild(login);
+  const automation = document.createElement("p");
+  automation.className = plan.automation_available ? "ready-message" : "automation-safety";
+  automation.textContent = plan.automation_message;
+  flow.appendChild(automation);
+  const safety = document.createElement("p");
+  safety.className = "automation-safety";
+  safety.textContent = plan.safety_note;
+  flow.appendChild(safety);
+  checklist.appendChild(flow);
+}
+
+async function openSaarthiApplication(serviceId = activeServiceId) {
+  if (!sessionId) return;
+  if (!serviceId) {
+    showToast("Choose a government service first.", "info");
+    return;
+  }
+  try {
+    const plan = await api("/sessions/" + sessionId + "/applications/" + encodeURIComponent(serviceId) + "/readiness");
+    renderSaarthiApplication(plan);
+    $("#service-checklist").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function appendLiveApplicationDocuments(flow, plan) {
+  const documents = document.createElement("section");
+  documents.className = "application-documents";
+  const title = document.createElement("h4");
+  title.textContent = "1. Required documents";
+  const list = document.createElement("ul");
+  const knownTypes = Array.from(new Set(
+    (plan.uploaded_document_types || []).concat(selectedFiles.map((item) => item.documentType)).filter(Boolean)
+  ));
+  (plan.documents || []).forEach((documentName) => {
+    const item = document.createElement("li");
+    const ready = knownTypes.some((type) => documentMatchesRequirement(type, documentName));
+    item.className = ready ? "document-ready" : "document-missing";
+    item.textContent = (ready ? "Ready: " : "Needed: ") + documentName;
+    list.appendChild(item);
+  });
+  const copy = document.createElement("p");
+  copy.textContent = plan.documents && plan.documents.length
+    ? "Add and extract each available document before filling the official form."
+    : "The official form did not expose document rows. Confirm the latest document list on the portal before applying.";
+  const collect = document.createElement("button");
+  collect.type = "button";
+  collect.className = "secondary-button full-width";
+  collect.textContent = "Add and extract required documents";
+  collect.addEventListener("click", () => {
+    $("#documents").scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast("Add the listed documents, select their type, then choose Extract labelled documents.", "info");
+  });
+  documents.append(title, list, copy, collect);
+  flow.appendChild(documents);
+}
+
+function renderLiveApplicationReview(flow, plan) {
+  const review = document.createElement("section");
+  review.className = "application-review";
+  const title = document.createElement("h4");
+  title.textContent = "Review the details Saarthi will fill";
+  const note = document.createElement("p");
+  note.textContent = "Saarthi fills only these reviewed visible fields. It will not read passwords, OTPs, CAPTCHAs, existing values, or submit the application.";
+  const list = document.createElement("dl");
+  list.className = "review-list";
+  plan.fields.forEach((field) => {
+    const row = document.createElement("div");
+    const label = document.createElement("dt");
+    label.textContent = field.label;
+    const value = document.createElement("dd");
+    value.textContent = field.value || "Not provided";
+    row.append(label, value);
+    list.appendChild(row);
+  });
+  const confirm = document.createElement("label");
+  confirm.className = "check-control review-confirm";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  const text = document.createElement("span");
+  text.textContent = "I reviewed these details and want Saarthi to fill the opened official form.";
+  confirm.append(checkbox, text);
+  const fill = document.createElement("button");
+  fill.type = "button";
+  fill.className = "primary-button full-width";
+  fill.textContent = "Fill the reviewed form";
+  fill.addEventListener("click", async () => {
+    if (!checkbox.checked) {
+      showToast("Please confirm that you reviewed the details first.", "info");
+      return;
+    }
+    fill.disabled = true;
+    fill.textContent = "Filling the official form...";
+    try {
+      const result = await api("/sessions/" + sessionId + "/live-application/automate-fill", "POST");
+      showToast(result.message, "success");
+      renderDocumentUploadStep(flow);
+    } catch (error) {
+      fill.disabled = false;
+      fill.textContent = "Fill the reviewed form";
+      showToast(error.message, "error");
+    }
+  });
+  review.append(title, note, list, confirm, fill);
+  flow.appendChild(review);
+}
+
+function renderLiveApplication(plan) {
+  setApplicationDocumentRequirements(plan);
+  const checklist = $("#service-checklist");
+  checklist.hidden = false;
+  checklist.innerHTML = "";
+  const flow = document.createElement("section");
+  flow.className = "saarthi-application-flow";
+  const title = document.createElement("h3");
+  title.textContent = plan.service + " with Saarthi";
+  const intro = document.createElement("p");
+  intro.textContent = "Saarthi will inspect the application form you open, collect the required documents and missing answers, then fill only the values you review. You submit the final application yourself.";
+  flow.append(title, intro);
+
+  if (!plan.form_scanned) {
+    const login = document.createElement("section");
+    login.className = "portal-login-step";
+    const loginTitle = document.createElement("h4");
+    loginTitle.textContent = "1. Open and inspect the official application form";
+    const loginCopy = document.createElement("p");
+    loginCopy.textContent = "Log in, complete any OTP or CAPTCHA yourself, and navigate to the actual application form. Then let Saarthi check the required fields and documents.";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "primary-button full-width";
+    open.textContent = "Open official portal and log in";
+    const scan = document.createElement("button");
+    scan.type = "button";
+    scan.className = "secondary-button full-width";
+    scan.textContent = "I am logged in — check requirements";
+    scan.disabled = !openedPortalServices.has(plan.service_id);
+    open.addEventListener("click", async () => {
+      open.disabled = true;
+      try {
+        const result = await api("/sessions/" + sessionId + "/live-application/launch", "POST");
+        openedPortalServices.add(plan.service_id);
+        showToast(result.message, "success");
+        renderLiveApplication(plan);
+      } catch (error) {
+        open.disabled = false;
+        showToast(error.message, "error");
+      }
+    });
+    scan.addEventListener("click", async () => {
+      scan.disabled = true;
+      scan.textContent = "Checking requirements...";
+      try {
+        const scannedPlan = await api("/sessions/" + sessionId + "/live-application/scan-open-form", "POST");
+        showToast(scannedPlan.scan_message || "The opened form was checked.", "success");
+        renderLiveApplication(scannedPlan);
+      } catch (error) {
+        scan.disabled = false;
+        scan.textContent = "I am logged in — check requirements";
+        showToast(error.message, "error");
+      }
+    });
+    login.append(loginTitle, loginCopy, open, scan);
+    flow.appendChild(login);
+    checklist.appendChild(flow);
+    return;
+  }
+
+  const scanned = document.createElement("p");
+  scanned.className = "ready-message";
+  scanned.textContent = "Requirements were read from " + ((plan.scanned_form && plan.scanned_form.title) || "the opened application form") + ".";
+  flow.appendChild(scanned);
+  appendLiveApplicationDocuments(flow, plan);
+
+  const details = document.createElement("section");
+  details.className = "application-details";
+  const detailsTitle = document.createElement("h4");
+  detailsTitle.textContent = "2. Details not found in your documents";
+  details.appendChild(detailsTitle);
+  if (plan.missing_fields.length) {
+    const copy = document.createElement("p");
+    copy.textContent = "Saarthi could not find these required answers in your saved details or documents. Please provide them before filling the form.";
+    const form = document.createElement("form");
+    form.className = "application-detail-form";
+    plan.fields.filter((field) => field.missing).forEach((field) => {
+      const group = document.createElement("label");
+      group.className = "field-group";
+      group.textContent = field.label;
+      let input;
+      if (field.type === "select" && field.options && field.options.length) {
+        input = document.createElement("select");
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select an option";
+        input.appendChild(placeholder);
+        field.options.forEach((option) => {
+          const choice = document.createElement("option");
+          choice.value = option;
+          choice.textContent = option;
+          input.appendChild(choice);
+        });
+      } else {
+        input = document.createElement("input");
+        input.type = field.type === "email" ? "email" : "text";
+      }
+      input.name = field.key;
+      input.required = true;
+      input.autocomplete = "off";
+      group.appendChild(input);
+      form.appendChild(group);
+    });
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "secondary-button full-width";
+    save.textContent = "Save missing details";
+    form.appendChild(save);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      try {
+        const updatedPlan = await api("/sessions/" + sessionId + "/live-application/details", "POST", {
+          details: Object.fromEntries(new FormData(form).entries()),
+        });
+        showToast("Application details saved. Please review them now.", "success");
+        renderLiveApplication(updatedPlan);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    });
+    details.append(copy, form);
+    flow.appendChild(details);
+    checklist.appendChild(flow);
+    return;
+  }
+  const ready = document.createElement("p");
+  ready.className = "ready-message";
+  ready.textContent = "All required answers are ready for review.";
+  details.appendChild(ready);
+  flow.appendChild(details);
+  renderLiveApplicationReview(flow, plan);
+  const safety = document.createElement("p");
+  safety.className = "automation-safety";
+  safety.textContent = plan.safety_note;
+  flow.appendChild(safety);
+  checklist.appendChild(flow);
+}
+
+async function startGenericLiveApplication(source) {
+  if (!source || !source.url) {
+    showToast("Choose an official website from the live guidance list first.", "info");
+    return;
+  }
+  try {
+    const plan = await api("/sessions/" + sessionId + "/live-application", "POST", {
+      title: source.title || "Official government application",
+      url: source.url,
+    });
+    renderLiveApplication(plan);
+    const result = await api("/sessions/" + sessionId + "/live-application/launch", "POST");
+    openedPortalServices.add(plan.service_id);
+    renderLiveApplication(plan);
+    $("#services").scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast(result.message, "success");
+    addMessage("assistant", "The official portal is open. Log in yourself, open the application form, then choose ‘I am logged in — check requirements’. ");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function startLiveGuidedApplication(serviceId, source = null) {
+  if (!sessionId) return;
+  if (!serviceId) {
+    await startGenericLiveApplication(source);
+    return;
+  }
+  try {
+    await selectService(serviceId);
+    const plan = await api("/sessions/" + sessionId + "/applications/" + encodeURIComponent(serviceId) + "/readiness");
+    renderSaarthiApplication(plan);
+
+    const result = await api("/sessions/" + sessionId + "/launch_browser", "POST", { service_id: serviceId });
+    openedPortalServices.add(serviceId);
+    renderSaarthiApplication(plan);
+    $("#services").scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast(result.message, "success");
+    addMessage(
+      "assistant",
+      "The official portal is open. Log in, complete any OTP or CAPTCHA yourself, then open the application form and choose ‘I am logged in — check requirements’."
+    );
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function refreshApplicationAfterDocumentExtraction() {
+  if (!activeApplicationServiceId || !sessionId) return false;
+  try {
+    const isLiveApplication = activeApplicationType === "live_guidance";
+    const plan = await api(isLiveApplication
+      ? "/sessions/" + sessionId + "/live-application/readiness"
+      : "/sessions/" + sessionId + "/applications/" + encodeURIComponent(activeApplicationServiceId) + "/readiness"
+    );
+    if (isLiveApplication) renderLiveApplication(plan);
+    else renderSaarthiApplication(plan);
+    if (plan.missing_fields && plan.missing_fields.length) {
+      const labels = plan.fields
+        .filter((field) => field.missing)
+        .map((field) => field.label)
+        .join(", ");
+      addMessage(
+        "assistant",
+        "I extracted the available documents. I still need " + labels + ". Please complete these fields in the Saarthi application preparation panel."
+      );
+      showToast("More application details are needed before Saarthi can fill the form.", "info");
+    } else {
+      addMessage("assistant", "I extracted the available documents. Your required application details are now ready for review.");
+    }
+    return true;
+  } catch (error) {
+    showToast("Documents were extracted, but the application plan could not be refreshed: " + error.message, "info");
+    return false;
   }
 }
 
@@ -397,7 +1374,8 @@ function renderDocuments() {
     placeholder.value = "";
     placeholder.textContent = "Select document type";
     type.appendChild(placeholder);
-    DOCUMENT_TYPES.forEach((documentType) => {
+    const documentChoices = Array.from(new Set(requiredApplicationDocuments.concat(DOCUMENT_TYPES)));
+    documentChoices.forEach((documentType) => {
       const option = document.createElement("option");
       option.value = documentType;
       option.textContent = documentType;
@@ -515,6 +1493,7 @@ async function extractDocuments() {
       }
     }
     let profileSaved = false;
+    let applicationPlanRefreshed = false;
     if (extractedCount) {
       try {
         await saveProfile({ quiet: true });
@@ -522,6 +1501,7 @@ async function extractDocuments() {
       } catch (error) {
         showToast("Documents were processed, but please review the extracted profile details before saving.", "info");
       }
+      applicationPlanRefreshed = await refreshApplicationAfterDocumentExtraction();
     }
     updateReadiness();
     $("#scan-status").textContent = extractedCount + " document" + (extractedCount === 1 ? "" : "s") + (profileSaved ? " processed and saved to your profile." : " processed. Please review your profile before saving.");
@@ -531,7 +1511,7 @@ async function extractDocuments() {
       showToast("Labelled document details have been added to the profile.", "success");
       addMessage("assistant", "I processed your labelled documents. Please check the profile fields and correct anything that looks wrong.");
     }
-    if (extractedCount) askForMissingDetails();
+    if (extractedCount && !applicationPlanRefreshed) askForMissingDetails();
   } catch (error) {
     $("#scan-status").textContent = "Could not extract details. You can still enter them manually.";
     showToast(error.message, "error");
@@ -545,7 +1525,7 @@ function applyExtractedFields(fields) {
   const bindings = {
     name: "#profile-name", age: "#profile-age", dob: "#profile-dob",
     mobile: "#profile-mobile", address: "#profile-address", gender: "#profile-gender",
-    state: "#profile-state", occupation: "#profile-occupation",
+    state: "#profile-state", district: "#profile-district", occupation: "#profile-occupation",
     annual_income: "#profile-income", caste_category: "#profile-category",
     land_acres: "#profile-land",
   };
@@ -596,9 +1576,19 @@ async function askAssistant(message) {
   try {
     await saveProfile({ quiet: true });
     const result = await api("/sessions/" + sessionId + "/assistant", "POST", { message: question });
+    // Answers collected in chat are saved to the same profile shown in
+    // "Your details", so the citizen can review or correct them immediately.
+    if (result.profile) {
+      restoreProfile(result.profile);
+      await loadServices();
+    }
     addMessage("assistant", result.reply);
     renderSchemes(result.recommendations || []);
-    renderLiveGuidance(result.live_guidance);
+    renderLiveGuidance(result.live_guidance, result.application_service_id);
+    if (result.application_service_id && !result.live_guidance) await selectService(result.application_service_id);
+    if (result.saved_profile_fields && result.saved_profile_fields.length) {
+      showToast("Saved from chat: " + result.saved_profile_fields.join(", ") + ".", "success");
+    }
     if (result.profile_gaps && result.profile_gaps.length) {
       showToast("For better matches, add: " + result.profile_gaps.join(", ") + ".", "info");
     }
@@ -619,6 +1609,60 @@ async function changeLanguage() {
   }
 }
 
+function restoreProfile(profile = {}) {
+  const bindings = {
+    name: "#profile-name", age: "#profile-age", dob: "#profile-dob",
+    gender: "#profile-gender", state: "#profile-state", district: "#profile-district",
+    occupation: "#profile-occupation", annual_income: "#profile-income",
+    mobile: "#profile-mobile", address: "#profile-address", caste_category: "#profile-category",
+    land_acres: "#profile-land", employment_sector: "#profile-sector", house_type: "#profile-house",
+  };
+  Object.entries(bindings).forEach(([field, selector]) => {
+    if (profile[field] !== undefined && profile[field] !== null) $(selector).value = String(profile[field]);
+  });
+  ["is_bpl", "has_lpg_connection", "is_student", "is_entrepreneur", "is_pregnant", "is_first_child"].forEach((field) => {
+    const input = $(`[name="${field}"]`);
+    if (input && profile[field] !== undefined) input.checked = Boolean(profile[field]);
+  });
+  updateReadiness();
+}
+
+function onboardingProfileComplete(profile = null) {
+  const data = profile || profilePayload();
+  return data.age !== null && data.age !== "" && data.gender && data.state && data.district
+    && data.occupation && data.annual_income !== null && data.annual_income !== ""
+    && data.caste_category;
+}
+
+function resumeOnboarding(profile = {}) {
+  const saved = readOnboardingState();
+  if (saved && saved.answers) {
+    onboardingAnswers = saved.answers;
+    ONBOARDING_STEPS.slice(1).forEach(({ key }) => {
+      setProfileInputValue(key, Object.prototype.hasOwnProperty.call(onboardingAnswers, key) ? onboardingAnswers[key] : "");
+    });
+    onboardingStep = Math.max(0, Math.min(Number(saved.step) || 0, ONBOARDING_STEPS.length));
+    if (saved.complete && onboardingProfileComplete(profile)) onboardingStep = ONBOARDING_STEPS.length;
+  } else if (onboardingProfileComplete(profile)) {
+    onboardingAnswers = {
+      age: profile.age,
+      gender: profile.gender,
+      state: profile.state,
+      district: profile.district,
+      occupation: profile.occupation,
+      annual_income: profile.annual_income,
+      caste_category: profile.caste_category,
+    };
+    onboardingStep = ONBOARDING_STEPS.length;
+    saveOnboardingState(true);
+  } else {
+    const firstMissing = ONBOARDING_STEPS.slice(1).findIndex((step) => !onboardingValue(step.key));
+    onboardingStep = firstMissing < 0 ? 1 : firstMissing + 1;
+  }
+  if (onboardingStep >= ONBOARDING_STEPS.length) hideOnboarding();
+  else renderOnboardingStep();
+}
+
 async function endSession() {
   if (!sessionId || !window.confirm("End this session and erase its saved session data?")) return;
   try {
@@ -627,6 +1671,19 @@ async function endSession() {
     selectedFiles = [];
     additionalDocumentData = [];
     savedProfileData = {};
+    activeApplicationServiceId = null;
+    activeApplicationType = null;
+    requiredApplicationDocuments = [];
+    onboardingAnswers = {};
+    onboardingStep = 0;
+    language = "en";
+    speechEnabled = false;
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    localStorage.setItem(VOICE_STORAGE_KEY, "false");
+    $("#profile-form").reset();
+    $("#chat-log").innerHTML = "";
+    $("#application-document-request").hidden = true;
     renderDocuments();
     renderAdditionalDocumentData();
     renderSavedProfileData();
@@ -640,12 +1697,37 @@ async function endSession() {
 }
 
 async function startSession() {
-  const session = await api("/sessions", "POST");
-  sessionId = session.session_id;
-  await api("/sessions/" + sessionId + "/language", "POST", { language });
+  let session = null;
+  const savedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (savedSessionId) {
+    try {
+      session = await api("/sessions/" + savedSessionId);
+      sessionId = session.session_id;
+      language = session.language || language;
+      restoreProfile(session.profile || {});
+      renderSchemes(session.eligibility || []);
+    } catch (error) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+      sessionId = null;
+    }
+  }
+  if (!session) {
+    session = await api("/sessions", "POST");
+    sessionId = session.session_id;
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    language = "en";
+    onboardingStep = 0;
+    onboardingAnswers = {};
+    saveOnboardingState(false);
+  }
+  $("#language-select").value = language;
+  syncVoiceButton();
   $("#session-status").textContent = "Secure session active";
   await loadServices();
   updateReadiness();
+  if (session.profile) resumeOnboarding(session.profile);
+  else renderOnboardingStep();
 }
 
 function bindEvents() {
@@ -672,10 +1754,14 @@ function bindEvents() {
   $("#end-session-button").addEventListener("click", endSession);
   $("#voice-toggle").addEventListener("click", toggleSpeech);
   $("#microphone-button").addEventListener("click", startListening);
+  $("#onboarding-next").addEventListener("click", () => advanceOnboarding().catch((error) => showToast(error.message, "error")));
+  $("#onboarding-back").addEventListener("click", goBackOnboarding);
+  $("#onboarding-end-session").addEventListener("click", endSession);
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   bindEvents();
+  syncVoiceButton();
   renderDocuments();
   updateReadiness();
   if ("speechSynthesis" in window) window.speechSynthesis.getVoices();

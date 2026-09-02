@@ -35,14 +35,26 @@ class Session:
     def __init__(self) -> None:
         self.id = uuid.uuid4().hex
         self.state: State = State.GREET
-        self.language = "hi"
+        self.language = "en"
         self.service_id: Optional[str] = None
         self.profile = CitizenProfile()
         self.eligibility: list = []
         self.artifacts: List[str] = []  # file paths of generated PDFs
         self.scans: Dict[str, str] = {} # maps document category to absolute file path
         self.document_extractions: List[Dict[str, Any]] = []  # reviewed extra fields, kept only for this session
+        # Service-specific answers that do not belong in the reusable citizen
+        # profile. This makes new portal forms configurable without adding a
+        # model field for every government scheme.
+        self.application_details: Dict[str, Dict[str, Any]] = {}
+        self.discovered_forms: Dict[str, Dict[str, Any]] = {}
+        # One live-guidance application may be prepared alongside catalogued
+        # services. It contains only the official URL/title for this session.
+        self.live_application: Dict[str, Any] = {}
         self.chat_history: List[Dict[str, str]] = [] # conversational fallback history for extraction
+        # The assistant keeps only the current intent and the profile fields
+        # it still needs to answer that intent. Values are merged into the
+        # normal profile only after the citizen sends a follow-up answer.
+        self.assistant_context: Dict[str, Any] = {}
         self.created_at = time.time()
         self.last_active = time.time()
         self.completed = False
@@ -68,20 +80,18 @@ class SessionStore:
         self._sessions: Dict[str, Session] = {}
 
     def cleanup(self, max_age: int = 1800) -> None:
-        """Sweep and wipe sessions inactive for max_age seconds to prevent memory leaks."""
+        """Retained as an explicit maintenance hook; sessions are not timed out automatically."""
         now = time.time()
         to_wipe = [sid for sid, s in self._sessions.items() if now - getattr(s, "last_active", s.created_at) > max_age]
         for sid in to_wipe:
             self.wipe(sid, status="timeout")
 
     def create(self) -> Session:
-        self.cleanup()
         s = Session()
         self._sessions[s.id] = s
         return s
 
     def get(self, sid: str) -> Optional[Session]:
-        self.cleanup()
         s = self._sessions.get(sid)
         if s:
             s.last_active = time.time()

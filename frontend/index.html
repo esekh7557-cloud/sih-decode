@@ -67,6 +67,7 @@
           <p>Tell me what you need. I can find suitable government schemes, explain certificate requirements, and help you prepare an application.</p>
           <div class="prompt-chips" aria-label="Suggested questions">
             <button type="button" data-prompt="Which schemes can I apply for?">Find schemes for me</button>
+            <button type="button" data-prompt="I want to get a scholarship.">Find a scholarship</button>
             <button type="button" data-prompt="I need an income certificate.">I need a certificate</button>
             <button type="button" data-prompt="Can I apply for PM-KISAN?">Ask about PM-KISAN</button>
           </div>
@@ -111,6 +112,7 @@
               <p id="live-guidance-notice"></p>
               <ol id="live-guidance-steps"></ol>
               <div class="official-sources" id="official-sources"></div>
+              <div class="live-guidance-actions" id="live-guidance-actions"></div>
             </section>
           </section>
 
@@ -149,11 +151,16 @@
               <div class="field-group">
                 <label for="profile-state">State</label>
                 <select id="profile-state" name="state">
+                  <option value="">Select state</option>
                   <option value="Goa">Goa</option>
                   <option value="Maharashtra">Maharashtra</option>
                   <option value="Gujarat">Gujarat</option>
                   <option value="Other">Other</option>
                 </select>
+              </div>
+              <div class="field-group">
+                <label for="profile-district">District</label>
+                <input id="profile-district" name="district" placeholder="Enter your district" />
               </div>
               <div class="field-group">
                 <label for="profile-occupation">Occupation</label>
@@ -250,6 +257,11 @@
             <div class="document-list" id="document-list">
               <p class="empty-documents">No documents added yet.</p>
             </div>
+            <section class="application-document-request" id="application-document-request" hidden aria-live="polite">
+              <strong id="application-document-title">Documents required for your application</strong>
+              <p>Upload and label each available document below. Saarthi will extract usable details, then ask for anything that is still missing.</p>
+              <ul id="application-document-requirements"></ul>
+            </section>
             <section class="additional-data" id="additional-data" hidden>
               <strong>Additional information found</strong>
               <p>Saved for this session only. Review it before using it in an application.</p>
@@ -282,7 +294,7 @@
         <div class="panel-heading">
           <div>
             <p class="eyebrow">PERSONALISED RESULTS</p>
-            <h2>Scheme matches for you</h2>
+           <h2>Scheme matches for you</h2>
             <p class="muted">Verified matches are based on transparent rules. AI suggestions require manual confirmation.</p>
           </div>
           <span class="count-pill" id="scheme-count">0 matches</span>
@@ -300,6 +312,23 @@
         <span>Explainable scheme guidance. Human verification for final applications.</span>
       </footer>
     </main>
+  </div>
+
+  <div class="onboarding-backdrop" id="onboarding" hidden>
+    <section class="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div class="onboarding-brand"><span class="brand-mark">JS</span><span><strong>JanSeva AI</strong><small>Private citizen setup</small></span></div>
+      <div class="onboarding-progress" aria-label="Setup progress"><span id="onboarding-progress-bar"></span></div>
+      <p class="eyebrow" id="onboarding-kicker">WELCOME</p>
+      <h2 id="onboarding-title">Choose your language</h2>
+      <p class="onboarding-copy" id="onboarding-copy">Start with your preferred language. You can change it later from the dashboard.</p>
+      <div id="onboarding-content"></div>
+      <div class="onboarding-actions">
+        <button class="secondary-button" id="onboarding-back" type="button">Back</button>
+        <button class="primary-button" id="onboarding-next" type="button">Continue</button>
+      </div>
+      <button class="onboarding-end text-button" id="onboarding-end-session" type="button">End and erase session</button>
+      <p class="onboarding-note">Your answers stay in this session and are erased only when you choose <strong>End and erase session</strong>.</p>
+    </section>
   </div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
   <script src="/app.js?v=dashboard-1"></script>

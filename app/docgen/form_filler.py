@@ -2,7 +2,7 @@ import sys
 import time
 import os
 from selenium import webdriver
-from selenium.webdriver.edge.options import Options
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
@@ -30,7 +30,12 @@ def wait_and_click_yes(driver, action_name, timeout=2):
         print(f"   [WARN] Could not find confirmation modal for {action_name} within {timeout}s")
         return False
 
-def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income_certificate"):
+def fill_form(
+    session_id: str,
+    port: int = 9222,
+    certificate_type: str = "income_certificate",
+    proceed_to_upload: bool = False,
+):
     import importlib
     print("=" * 60)
     print("  JanSeva AI -- Form Filler (Selenium Debugging Mode)")
@@ -51,7 +56,15 @@ def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income
         if not session:
             print(f"\n[ERROR] Session {session_id} not found!")
             return
-        data = session.profile.model_dump()
+        # Only use answers actually supplied by the citizen. Missing details
+        # must be collected in Saarthi's review screen, never guessed.
+        combined_data = session.profile.model_dump()
+        combined_data.update(getattr(session, "application_details", {}).get(session.service_id or "", {}))
+        data = {
+            key: value
+            for key, value in combined_data.items()
+            if key in labelMapping and value not in (None, "")
+        }
         print(f"\n[DATA] Loaded session data for {data.get('name', 'Unknown')}")
     else:
         # Fallback dummy data for local testing
@@ -104,15 +117,15 @@ def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income
             'apply_to_concerned_office': 'Yes'
         }
 
-    # 2. Connect to the existing Edge Browser
-    print(f"\n[CONNECT] Connecting to Edge on port {port}...")
-    edge_options = Options()
-    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
+    # 2. Connect to the existing Chrome browser
+    print(f"\n[CONNECT] Connecting to Chrome on port {port}...")
+    chrome_options = Options()
+    chrome_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
     
     try:
-        driver = webdriver.Edge(options=edge_options)
+        driver = webdriver.Chrome(options=chrome_options)
     except Exception as e:
-        print(f"\n[ERROR] Could not connect to Edge on port {port}!")
+        print(f"\n[ERROR] Could not connect to Chrome on port {port}!")
         print(f"Make sure you launched it with --remote-debugging-port={port}")
         return
 
@@ -378,7 +391,14 @@ def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income
         except Exception as e:
             print(f"   [FAIL] Error processing modal: {e}")
 
-    # 5. Click "Save & Proceed"
+    # 5. Stop for the citizen to review the completed page by default. Saarthi
+    # must not advance or submit an application without a separate consent.
+    if not proceed_to_upload:
+        print("\n[REVIEW] Fields filled. Stopping before 'Save & Proceed' for citizen review.")
+        return
+
+    # 6. Click "Save & Proceed" only when explicitly requested by a future
+    # user-confirmed workflow.
     print("\\n[FILL] Submitting Form...")
     try:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")

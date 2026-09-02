@@ -6,8 +6,12 @@ Responses follow the kiosk action protocol:
 {"action": "speak|menu|ask|confirm|complete", ..., "language": "hi"}
 """
 import os
+import re
+import shutil
 import time
+import importlib
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Load .env file automatically
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -30,14 +34,33 @@ from app.core.profile import mask_aadhaar, validate_mobile
 from app.core.session import Session, SessionStore, State
 from app.docgen.generator import generate_application, generate_schemes_sheet, OUTPUT_DIR
 from app.eligibility.llm_enricher import enrich
-from app.eligibility.rules import check_eligibility
+from app.eligibility.rules import LAKH, check_eligibility
 from app.i18n.phrases import SUPPORTED, get_phrase
 from app.ocr.scanner import CONFIDENCE_THRESHOLD, get_scanner
 from app.printing.printer import make_qr, print_document
 from app.services.catalog import build_checklist, get_service, list_services
 from app.services.web_search import get_live_guidance, wants_live_search
-from app.agent.analyzer import analyze_form
-from app.agent.executor import execute_form_fill
+
+PORTAL_URLS = {
+    "goa_online": "https://goaonline.gov.in/Appln/UIP/DeptServices?__ns=Revenue",
+}
+
+DEFAULT_APPLICATION_FIELDS = ("name", "dob", "mobile", "address")
+LIVE_APPLICATION_KEY = "__live_guidance__"
+
+ASSISTANT_FIELD_LABELS = {
+    "age": "your age",
+    "state": "your state",
+    "gender": "your gender",
+    "occupation": "whether you are a student",
+    "annual_income": "your annual family income",
+    "caste_category": "your social category",
+}
+
+# These are the minimum profile facts needed to make a useful scholarship
+# recommendation. The assistant can collect several in one natural-language
+# answer, so the citizen does not have to navigate back to the form.
+SCHOLARSHIP_FIELDS = ("age", "state", "occupation", "annual_income", "caste_category")
 
 app = FastAPI(title="JanSeva AI Kiosk", version="0.1.0")
 store = SessionStore()
@@ -102,6 +125,9 @@ def get_session(sid: str):
         "language": s.language,
         "service_id": s.service_id,
         "completed": s.completed,
+        "profile": s.profile.model_dump(),
+        "eligibility": [item.__dict__ for item in s.eligibility],
+        "pending_request": s.assistant_context or None,
     }
 
 
@@ -122,7 +148,7 @@ def create_session():
         "action": "menu",
         "title": get_phrase("greeting"),
         "options": [{"id": lang, "label": lang} for lang in SUPPORTED],
-        "language": "hi",
+        "language": "en",
     }
 
 
@@ -375,13 +401,12 @@ async def scan(sid: str, body: ScanIn):
         for key, value in fields.items()
         if key not in profile_fields and key not in ignored_extraction_fields and key != "aadhaar"
     }
-    if extra_fields:
-        s.document_extractions.append(
-            {
-                "document_type": body.expected_type or "Document",
-                "fields": extra_fields,
-            }
-        )
+    s.document_extractions.append(
+        {
+            "document_type": body.expected_type or "Document",
+            "fields": extra_fields,
+        }
+    )
                 
     if result.image_path:
         s.artifacts.append(result.image_path)
@@ -447,6 +472,155 @@ def _profile_gaps(profile) -> list[str]:
     return [name for name, value in fields.items() if value in (None, "")]
 
 
+def _assistant_intent(message: str) -> Optional[str]:
+    """Identify the small set of intents that need conversational intake."""
+    message_lower = message.lower()
+    if any(term in message_lower for term in ("scholarship", "stipend", "tuition", "education grant")):
+        return "scholarship"
+    if any(term in message_lower for term in ("scheme", "schemes", "yojana", "benefit", "eligible", "eligibility")):
+        return "scheme"
+    return None
+
+
+def _missing_assistant_fields(profile, intent: str) -> list[str]:
+    """Return fields that are missing for the current request, in question order."""
+    if intent == "scholarship":
+        missing = []
+        if profile.age is None:
+            missing.append("age")
+        if not profile.state:
+            missing.append("state")
+        if not (profile.is_student or profile.occupation == "student"):
+            missing.append("occupation")
+        if profile.annual_income is None:
+            missing.append("annual_income")
+        if not profile.caste_category:
+            missing.append("caste_category")
+        return missing
+    return [
+        field for field in ("state", "age", "gender", "occupation", "annual_income")
+        if getattr(profile, field) in (None, "")
+    ]
+
+
+def _income_value(text: str) -> Optional[int]:
+    """Extract an annual income written as rupees or lakhs."""
+    amount_pattern = r"(?:₹|rs\.?|inr\s*)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(lakh|lakhs|lac|lacs)?"
+    labelled = re.search(
+        r"(?:annual\s+family\s+income|family\s+income|annual\s+income|income)"
+        r"\s*(?:is|of|:)?\s*" + amount_pattern,
+        text.lower(),
+    )
+    match = labelled or (re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:lakh|lakhs|lac|lacs)", text.lower()) if re.search(r"[0-9]+(?:\.[0-9]+)?\s*(?:lakh|lakhs|lac|lacs)", text.lower()) else None)
+    if not match:
+        return None
+    try:
+        raw_amount = match.group(1).replace(",", "")
+        amount = float(raw_amount)
+        unit = (match.group(2) or "").lower() if match.lastindex and match.lastindex >= 2 else ""
+        return int(amount * LAKH) if unit in {"lakh", "lakhs", "lac", "lacs"} else int(amount)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_assistant_updates(message: str, fields: Optional[list[str]] = None) -> dict:
+    """Extract only unambiguous profile answers from a conversational reply.
+
+    This deliberately handles common kiosk answers without pretending to be a
+    general-purpose NLP system. Anything unclear remains for the citizen to
+    confirm in the profile form.
+    """
+    text = message.strip()
+    lower = text.lower()
+    wanted = set(fields or ("age", "state", "gender", "occupation", "annual_income", "caste_category"))
+    updates: dict = {}
+
+    if "age" in wanted:
+        age_match = re.search(r"(?:i\s*am|age\s*(?:is|:)?|aged)\s*(\d{1,3})\b", lower)
+        if not age_match and re.fullmatch(r"\d{1,3}", lower):
+            age_match = re.match(r"\d{1,3}", lower)
+        if age_match and 0 <= int(age_match.group(1)) <= 120:
+            updates["age"] = int(age_match.group(1))
+
+    if "annual_income" in wanted:
+        income = _income_value(text)
+        if income is None and "age" not in wanted and re.fullmatch(r"(?:₹|rs\.?\s*)?[0-9][0-9,]*", lower):
+            try:
+                income = int(re.sub(r"[^0-9]", "", lower))
+            except ValueError:
+                income = None
+        if income is not None and income >= 0:
+            updates["annual_income"] = income
+
+    if "state" in wanted:
+        states = {"maharashtra": "Maharashtra", "goa": "Goa", "gujarat": "Gujarat"}
+        for name, value in states.items():
+            if re.search(rf"\b{re.escape(name)}\b", lower):
+                updates["state"] = value
+                break
+
+    if "gender" in wanted:
+        if re.search(r"\b(female|woman|girl)\b", lower):
+            updates["gender"] = "female"
+        elif re.search(r"\b(male|man|boy)\b", lower):
+            updates["gender"] = "male"
+        elif re.search(r"\b(other|non[- ]binary)\b", lower):
+            updates["gender"] = "other"
+
+    if "occupation" in wanted:
+        occupation_aliases = (
+            (r"\b(student|studying|college student|school student)\b", "student"),
+            (r"\b(farmer|agriculturist)\b", "farmer"),
+            (r"\b(artisan|craftsperson)\b", "artisan"),
+            (r"\b(small business|business owner|entrepreneur)\b", "small_business"),
+            (r"\b(salaried|employee)\b", "salaried"),
+            (r"\bunemployed\b", "unemployed"),
+            (r"\bpensioner\b", "pensioner"),
+        )
+        for pattern, occupation in occupation_aliases:
+            if re.search(pattern, lower):
+                updates["occupation"] = occupation
+                if occupation == "student":
+                    updates["is_student"] = True
+                break
+
+    if "caste_category" in wanted:
+        categories = ("VJNT", "MINORITY", "GENERAL", "OBC", "SC", "ST", "NT", "SBC")
+        for category in categories:
+            if re.search(rf"\b{re.escape(category.lower())}\b", lower):
+                updates["caste_category"] = category
+                break
+
+    return updates
+
+
+def _merge_assistant_updates(s: Session, updates: dict) -> None:
+    if not updates:
+        return
+    data = s.profile.model_dump()
+    data.update({key: value for key, value in updates.items() if key in data})
+    s.profile = type(s.profile).model_validate(data)
+
+
+def _assistant_follow_up(intent: str, missing: list[str], profile, saved: dict) -> str:
+    request_name = "scholarship" if intent == "scholarship" else "scheme recommendations"
+    labels = [ASSISTANT_FIELD_LABELS[field] for field in missing]
+    saved_text = ""
+    if saved:
+        saved_labels = []
+        for field in saved:
+            if field in ASSISTANT_FIELD_LABELS:
+                saved_labels.append(ASSISTANT_FIELD_LABELS[field].replace("your ", ""))
+        if saved_labels:
+            saved_text = " I saved " + ", ".join(saved_labels) + " from your answer."
+    return (
+        f"I can help you find the right {request_name}.{saved_text} "
+        f"To narrow it down, I still need {', '.join(labels)}. "
+        "You can reply in one message, for example: ‘I am 19, a student, SC, "
+        "my family income is ₹2 lakh, and I live in Maharashtra.’"
+    )
+
+
 def _requested_matches(message: str, results: list) -> list:
     """Find eligible schemes that are explicitly mentioned in a citizen query."""
     normalized_message = " ".join(
@@ -476,21 +650,89 @@ async def citizen_assistant(sid: str, body: AssistantIn):
     if not message:
         raise HTTPException(400, "Please enter a question or a scheme name")
 
+    previous_context = s.assistant_context
+    detected_intent = _assistant_intent(message)
+    message_lower = message.lower()
+    is_new_service_request = any(
+        term in message_lower for term in ("certificate", "document", "income certificate", "residence", "caste")
+    )
+    intent = detected_intent or (None if is_new_service_request else previous_context.get("intent"))
+
+    # A follow-up answer is applied to the profile before eligibility is
+    # calculated. This is what lets the assistant learn from chat, while the
+    # existing profile form remains the single place where those details live.
+    saved_updates = {}
+    if intent:
+        intent_fields = list(SCHOLARSHIP_FIELDS if intent == "scholarship" else ("state", "age", "gender", "occupation", "annual_income"))
+        fields = previous_context.get("missing_fields") or intent_fields
+        saved_updates = _extract_assistant_updates(message, fields)
+        _merge_assistant_updates(s, saved_updates)
+
     results = check_eligibility(s.profile)
     results = await enrich(s.profile, results, s.language)
     s.eligibility = results
 
-    message_lower = message.lower()
     gaps = _profile_gaps(s.profile)
     service_terms = ("certificate", "certificates", "document", "income certificate", "residence", "caste")
     scheme_terms = ("scheme", "schemes", "yojana", "eligible", "eligibility", "benefit", "apply", "kisan", "awas", "ujjwala", "ayushman", "mudra", "scholarship")
 
     requested = _requested_matches(message, results)
     live_guidance = None
+    application_service_id = None
     if wants_live_search(message):
         live_guidance = await get_live_guidance(message, s.profile.state)
 
-    if requested:
+    available_services = list_services(s.profile.state)
+    for candidate_id, candidate in available_services.items():
+        if str(candidate.get("name", "")).lower() in message_lower:
+            application_service_id = candidate_id
+            break
+
+    recommendations = results
+    intent_missing = _missing_assistant_fields(s.profile, intent) if intent else []
+    if intent and intent_missing:
+        # Keep the request alive until its missing facts have been answered.
+        s.assistant_context = {"intent": intent, "fields": intent_fields, "missing_fields": intent_missing}
+        gaps = [ASSISTANT_FIELD_LABELS.get(field, field) for field in intent_missing]
+        reply = _assistant_follow_up(intent, intent_missing, s.profile, saved_updates)
+    elif intent and not application_service_id:
+        # The request is complete. Clear the pending state so a later generic
+        # question starts a fresh conversation.
+        s.assistant_context = {}
+        recommendations = results
+        if intent == "scholarship":
+            scholarship_results = [item for item in results if "scholar" in item.scheme_name.lower()]
+            if scholarship_results:
+                recommendations = scholarship_results
+        if recommendations:
+            reply = (
+                "Thanks — I saved the details you shared. Based on your updated profile, "
+                f"I found {len(recommendations)} {('scholarship' if intent == 'scholarship' else 'scheme')} match"
+                f"{'es' if len(recommendations) != 1 else ''}. Review the cards below for the benefit, reason, and application route."
+            )
+        else:
+            reply = (
+                "Thanks — I saved the details you shared. I could not confirm a matching "
+                f"{('scholarship' if intent == 'scholarship' else 'scheme')} from the verified rules yet. "
+                "Please review the profile and ask me to check again if any detail changes."
+            )
+    else:
+        recommendations = results
+
+    if intent and intent_missing:
+        # The follow-up question above is the response for an incomplete
+        # intent, even if the text also contains a generic scheme keyword.
+        pass
+    elif application_service_id:
+        reply = (
+            f"I found the {available_services[application_service_id]['name']} service. I have opened its checklist in the Services panel, "
+            "including the official-portal route and the Apply with Saarthi button."
+        )
+    elif intent:
+        # A complete intent already has a tailored response from the block
+        # above. Keep it instead of falling through to generic wording.
+        pass
+    elif requested:
         reply = (
             f"You appear eligible for {', '.join(item.scheme_name for item in requested)}. "
             "Review the benefit and application route below before applying."
@@ -530,12 +772,22 @@ async def citizen_assistant(sid: str, body: AssistantIn):
         else:
             reply += f" {live_guidance['notice']}"
 
+    if intent and not intent_missing and not application_service_id and intent == "scholarship":
+        recommendations = [item for item in results if "scholar" in item.scheme_name.lower()] or results
+
     return {
         "action": "assistant",
         "reply": reply,
-        "recommendations": [item.__dict__ for item in results],
+        "recommendations": [item.__dict__ for item in recommendations],
         "profile_gaps": gaps,
-        "services": [{"id": key, "label": value["name"]} for key, value in list_services(s.profile.state).items()],
+        "saved_profile_fields": list(saved_updates),
+        "profile": s.profile.model_dump(),
+        "pending_request": {
+            "intent": intent,
+            "missing_fields": intent_missing,
+        } if intent and intent_missing else None,
+        "services": [{"id": key, "label": value["name"]} for key, value in available_services.items()],
+        "application_service_id": application_service_id,
         "live_guidance": live_guidance,
         "language": s.language,
     }
@@ -653,8 +905,6 @@ def end_session(sid: str):
 
 # --- CUA AGENT ENDPOINTS ---------------------------------------------------
 
-from app.agent.analyzer import analyze_form
-from app.agent.executor import execute_form_fill
 from pydantic import BaseModel
 import shutil
 import tempfile
@@ -668,6 +918,7 @@ class AnalyzeRequest(BaseModel):
 async def api_analyze_form(req: AnalyzeRequest):
     """Trigger the CUA to navigate to the URL and extract the form schema."""
     try:
+        from app.agent.analyzer import analyze_form
         schema = await analyze_form(req.url)
         return schema.model_dump()
     except Exception as e:
@@ -677,6 +928,7 @@ async def api_analyze_form(req: AnalyzeRequest):
 async def api_execute_form(request: Request):
     """Trigger the CUA to fill the form using the provided structured data."""
     try:
+        from app.agent.executor import execute_form_fill
         form = await request.form()
         url = form.get("url")
         if not url:
@@ -709,7 +961,7 @@ async def api_execute_form(request: Request):
 
 
 class UploadDocsIn(BaseModel):
-    folder: str = r"C:\Users\Vedant\Desktop\data"
+    folder: str
     port: int = 9222
 
 @app.post("/api/upload_documents")
@@ -738,24 +990,446 @@ def api_upload_documents(body: UploadDocsIn):
 
 class FormFillIn(BaseModel):
     port: int = 9222
-    certificate_type: str = "income_certificate"
+    service_id: str
+
+class ApplicationServiceIn(BaseModel):
+    service_id: str
+
+
+class ApplicationDetailsIn(BaseModel):
+    details: Dict[str, Any]
+
+
+def _application_service(service_id: str) -> dict:
+    service = get_service(service_id)
+    if not service:
+        raise HTTPException(404, "Unknown government service")
+    return service
+
+
+def _portal_url(service: dict) -> str:
+    return str(service.get("portal_url") or PORTAL_URLS.get(service.get("portal"), "")).strip()
+
+
+def _chrome_executable() -> str:
+    """Locate Chrome even when it is not included in the shell PATH."""
+    candidates = [shutil.which("chrome.exe")]
+    for root in (os.getenv("PROGRAMFILES"), os.getenv("PROGRAMFILES(X86)"), os.getenv("LOCALAPPDATA")):
+        if root:
+            candidates.append(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    raise HTTPException(500, "Google Chrome is required to open an official portal, but it was not found on this computer")
+
+
+def _mapping_for_service(service: dict) -> tuple[str | None, dict]:
+    """Load a verified field mapping when the service declares one.
+
+    A service without a mapping remains usable for document preparation and
+    official-portal guidance; it simply does not get automated form filling.
+    """
+    mapping_name = str(service.get("automation_mapping") or "").strip()
+    if not mapping_name:
+        return None, {}
+    try:
+        module = importlib.import_module(f"app.docgen.mappings.{mapping_name}")
+        mapping = getattr(module, "MAPPING", {})
+        return mapping_name, mapping if isinstance(mapping, dict) else {}
+    except (ImportError, AttributeError):
+        return None, {}
+
+
+def _display_label(key: str, mapping: dict) -> str:
+    labels = mapping.get(key, [])
+    if labels:
+        label = str(labels[0]).replace("_", " ").strip()
+        if len(label) > 2 and not label.lower().startswith("drp"):
+            return label
+    return key.replace("_", " ").capitalize()
+
+
+def _application_field_keys(service: dict, mapping: dict, discovered: dict | None = None) -> list[str]:
+    configured = service.get("application_fields")
+    if isinstance(configured, list) and configured:
+        return [str(key) for key in configured]
+    if mapping:
+        return list(mapping.keys())
+    if discovered and isinstance(discovered.get("fields"), list):
+        return [str(field.get("key")) for field in discovered["fields"] if field.get("key")]
+    return list(DEFAULT_APPLICATION_FIELDS)
+
+
+def _profile_suggestion(label: str, profile: dict) -> Any:
+    """Suggest a saved profile value for a discovered field; never store it silently."""
+    label = label.lower()
+    aliases = (
+        (("applicant name", "full name", "name of applicant"), "name"),
+        (("date of birth", "dob"), "dob"),
+        (("mobile", "phone"), "mobile"),
+        (("email",), "email"),
+        (("father", "husband", "guardian"), "father_name"),
+        (("gender",), "gender"),
+        (("occupation",), "occupation"),
+        (("address", "house", "flat"), "address"),
+        (("district",), "district"),
+        (("taluka",), "taluka"),
+        (("village", "city", "town"), "village"),
+        (("pincode", "pin code", "postal"), "pincode"),
+        (("income",), "annual_income"),
+        (("caste", "category"), "caste_category"),
+    )
+    for terms, key in aliases:
+        if any(term in label for term in terms) and profile.get(key) not in (None, ""):
+            return profile[key]
+    return ""
+
+
+def _safe_application_value(field: str, value: Any) -> Any:
+    if value in (None, ""):
+        return ""
+    if field == "id_proof_no":
+        text = str(value)
+        return "••••" + text[-4:] if len(text) >= 4 else "••••"
+    return value
+
+
+@app.get('/sessions/{sid}/applications/{service_id}/readiness')
+def application_readiness(sid: str, service_id: str):
+    """Return a configuration-driven, reviewable application plan."""
+    s = _session(sid)
+    service = _application_service(service_id)
+    profile = s.profile.model_dump()
+    mapping_name, mapping = _mapping_for_service(service)
+    saved_details = s.application_details.get(service_id, {})
+    discovered = s.discovered_forms.get(service_id, {})
+    discovered_by_key = {
+        str(field.get("key")): field
+        for field in discovered.get("fields", [])
+        if isinstance(field, dict) and field.get("key")
+    }
+    fields, missing_fields = [], []
+    for key in _application_field_keys(service, mapping, discovered):
+        discovered_field = discovered_by_key.get(key, {})
+        value = saved_details.get(key, profile.get(key, ""))
+        if value in (None, "") and discovered_field:
+            value = _profile_suggestion(str(discovered_field.get("label", "")), profile)
+        required = bool(discovered_field.get("required")) if discovered_field and not mapping else True
+        missing = required and value in (None, "")
+        if missing:
+            missing_fields.append(key)
+        fields.append({
+            "key": key,
+            "label": str(discovered_field.get("label") or _display_label(key, mapping)),
+            "value": _safe_application_value(key, value),
+            "missing": missing,
+            "required": required,
+            "type": str(discovered_field.get("type", "text")),
+            "options": discovered_field.get("options", []),
+        })
+
+    document_types = sorted({
+        str(item.get("document_type", ""))
+        for item in s.document_extractions
+        if item.get("document_type")
+    })
+    configured_documents = [doc["name"] for doc in service.get("documents", [])]
+    discovered_documents = [str(item) for item in discovered.get("documents", [])]
+    documents = list(dict.fromkeys(configured_documents + discovered_documents))
+    return {
+        "service_id": service_id,
+        "service": service["name"],
+        "portal_url": _portal_url(service),
+        "documents": documents,
+        "uploaded_document_types": document_types,
+        "fields": fields,
+        "missing_fields": missing_fields,
+        "ready_to_fill": not missing_fields,
+        "automation_available": bool(mapping_name and mapping),
+        "form_scanned": bool(discovered),
+        "scanned_form": {"title": discovered.get("title"), "url": discovered.get("url")} if discovered else None,
+        "automation_message": (
+            "A verified field mapping is available for this service."
+            if mapping_name and mapping
+            else "Saarthi can prepare your documents and guide you to the official portal. Automated form filling is not configured for this service yet."
+        ),
+        "safety_note": "Saarthi never receives OTPs or CAPTCHAs and never submits the final application.",
+    }
+
+
+@app.post('/sessions/{sid}/applications/{service_id}/details')
+def save_application_details(sid: str, service_id: str, body: ApplicationDetailsIn):
+    """Save reviewed answers for one service without polluting the base profile."""
+    s = _session(sid)
+    service = _application_service(service_id)
+    _, mapping = _mapping_for_service(service)
+    allowed = set(_application_field_keys(service, mapping, s.discovered_forms.get(service_id)))
+    details = {
+        key: value.strip() if isinstance(value, str) else value
+        for key, value in body.details.items()
+        if key in allowed and value not in (None, "")
+    }
+    if "mobile" in details and not validate_mobile(str(details["mobile"])):
+        raise HTTPException(400, "Invalid mobile number")
+    s.application_details.setdefault(service_id, {}).update(details)
+
+    # Reuse answers that are part of the citizen profile for eligibility and
+    # later services, while keeping portal-only values service-specific.
+    profile_data = s.profile.model_dump()
+    profile_data.update({key: value for key, value in details.items() if key in profile_data})
+    s.profile = type(s.profile).model_validate(profile_data)
+    return application_readiness(sid, service_id)
+
+
+@app.post('/sessions/{sid}/applications/{service_id}/scan-open-form')
+def scan_open_application_form(sid: str, service_id: str, port: int = 9222):
+    """Inspect the form currently open in the citizen's local Saarthi browser."""
+    s = _session(sid)
+    _application_service(service_id)
+    from app.services.portal_scanner import scan_open_form
+    try:
+        discovered = scan_open_form(port)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "Saarthi could not inspect the opened form. Check that the application page is fully loaded and try again.") from exc
+    if not discovered["fields"]:
+        raise HTTPException(400, "No application fields were found. Open the actual form page after login, then try again.")
+    s.discovered_forms[service_id] = discovered
+    plan = application_readiness(sid, service_id)
+    plan["scan_message"] = f"Scanned {len(discovered['fields'])} visible form fields and {len(discovered['documents'])} document requirements from the opened page."
+    return plan
+
 
 @app.post('/sessions/{sid}/launch_browser')
-def launch_browser_endpoint(sid: str):
+def launch_browser_endpoint(sid: str, body: ApplicationServiceIn):
+    """Open a session-specific, debuggable Chrome window for citizen login."""
+    _session(sid)
+    service = _application_service(body.service_id)
+    url = _portal_url(service)
+    if not url:
+        raise HTTPException(400, "This service needs an official portal_url in services.yaml before it can be opened")
     import subprocess
-    import os
     try:
-        profile_dir = r"C:\Users\Vedant\Desktop\edge-debug-profile"
-        url = "https://goaonline.gov.in/Appln/UIP/DeptServices?__ns=Revenue"
-        cmd = f'start msedge --remote-debugging-port=9222 "--user-data-dir={profile_dir}" "{url}"'
-        subprocess.Popen(cmd, shell=True)
-        return {'status': 'success', 'message': 'Browser launched'}
+        profile_dir = Path.cwd() / ".janseva-browser" / sid
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        chrome = _chrome_executable()
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", chrome, "--remote-debugging-port=9222", f"--user-data-dir={profile_dir}", url],
+            shell=False,
+        )
+        return {
+            "status": "success",
+            "portal_url": url,
+            "message": f"The official portal for {service['name']} opened. Log in and complete any OTP or CAPTCHA yourself, then open the correct application page.",
+        }
     except Exception as e:
-        raise HTTPException(500, f"Failed to launch browser: {e}")
+        raise HTTPException(500, f"Failed to launch Google Chrome: {e}")
 
 @app.post('/sessions/{sid}/automate_fill')
 def trigger_fill_automation(sid: str, body: FormFillIn):
+    s = _session(sid)
+    service = _application_service(body.service_id)
+    mapping_name, mapping = _mapping_for_service(service)
+    if not mapping_name or not mapping:
+        raise HTTPException(400, "Automated form filling is not configured for this service yet")
+    readiness = application_readiness(sid, body.service_id)
+    if readiness["missing_fields"]:
+        raise HTTPException(400, "Complete the remaining application details before filling the portal form")
+    s.service_id = body.service_id
     from app.docgen.form_filler import fill_form
     import threading
-    threading.Thread(target=fill_form, args=(sid, body.port, body.certificate_type), daemon=True).start()
-    return {'action': 'filling', 'message': 'Selenium form filling started'}
+    threading.Thread(
+        target=fill_form,
+        args=(sid, body.port, mapping_name),
+        kwargs={"proceed_to_upload": False},
+        daemon=True,
+    ).start()
+    return {
+        'action': 'filling',
+        'message': "Saarthi is filling the opened form. It will stop before Save & Proceed so you can review every answer.",
+    }
+
+
+# --- LIVE-GUIDANCE APPLICATIONS --------------------------------------------
+
+class LiveApplicationIn(BaseModel):
+    title: str
+    url: str
+
+
+def _valid_live_application_url(value: str) -> str:
+    """Accept only an official government page returned by live guidance."""
+    url = value.strip()
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    is_official = host == "gov.in" or host.endswith(".gov.in") or host in {
+        "myscheme.gov.in", "umang.gov.in", "goaonline.gov.in",
+    }
+    if parsed.scheme not in {"http", "https"} or not host or not is_official:
+        raise HTTPException(400, "Choose an official government website from the live guidance list")
+    return url
+
+
+def _live_application_plan(s: Session) -> dict:
+    if not s.live_application:
+        raise HTTPException(404, "No live-guidance application has been selected")
+
+    profile = s.profile.model_dump()
+    saved_details = s.application_details.get(LIVE_APPLICATION_KEY, {})
+    discovered = s.discovered_forms.get(LIVE_APPLICATION_KEY, {})
+    scanned_fields = [
+        field for field in discovered.get("fields", [])
+        if isinstance(field, dict) and field.get("key") and field.get("type") != "file"
+    ]
+    if scanned_fields:
+        form_fields = scanned_fields
+    else:
+        form_fields = [
+            {"key": key, "label": key.replace("_", " ").capitalize(), "type": "text", "required": True}
+            for key in DEFAULT_APPLICATION_FIELDS
+        ]
+
+    fields, missing_fields = [], []
+    for field in form_fields:
+        key = str(field["key"])
+        label = str(field.get("label") or key.replace("_", " ").capitalize())
+        value = saved_details.get(key, profile.get(key, ""))
+        if value in (None, ""):
+            value = _profile_suggestion(label, profile)
+        required = bool(field.get("required", True))
+        missing = required and value in (None, "")
+        if missing:
+            missing_fields.append(key)
+        fields.append({
+            "key": key,
+            "label": label,
+            "value": _safe_application_value(key, value),
+            "missing": missing,
+            "required": required,
+            "type": str(field.get("type", "text")),
+            "options": field.get("options", []),
+        })
+
+    document_types = sorted({
+        str(item.get("document_type", ""))
+        for item in s.document_extractions
+        if item.get("document_type")
+    })
+    return {
+        "application_type": "live_guidance",
+        "service_id": LIVE_APPLICATION_KEY,
+        "service": s.live_application["title"],
+        "portal_url": s.live_application["url"],
+        "documents": [str(item) for item in discovered.get("documents", []) if str(item).strip()],
+        "uploaded_document_types": document_types,
+        "fields": fields,
+        "missing_fields": missing_fields,
+        "ready_to_fill": bool(discovered) and not missing_fields,
+        "automation_available": bool(discovered),
+        "form_scanned": bool(discovered),
+        "scanned_form": {"title": discovered.get("title"), "url": discovered.get("url")} if discovered else None,
+        "automation_message": (
+            "Saarthi can fill the reviewed visible fields in the opened form and will never submit it."
+            if discovered
+            else "Open the official portal, log in yourself, then scan the application form to identify its requirements."
+        ),
+        "safety_note": "Saarthi never reads passwords, OTPs, CAPTCHAs, or existing form values, and never submits the final application.",
+    }
+
+
+@app.post('/sessions/{sid}/live-application')
+def start_live_application(sid: str, body: LiveApplicationIn):
+    s = _session(sid)
+    s.live_application = {
+        "title": body.title.strip()[:160] or "Official government application",
+        "url": _valid_live_application_url(body.url),
+    }
+    s.application_details.pop(LIVE_APPLICATION_KEY, None)
+    s.discovered_forms.pop(LIVE_APPLICATION_KEY, None)
+    return _live_application_plan(s)
+
+
+@app.get('/sessions/{sid}/live-application/readiness')
+def live_application_readiness(sid: str):
+    return _live_application_plan(_session(sid))
+
+
+@app.post('/sessions/{sid}/live-application/details')
+def save_live_application_details(sid: str, body: ApplicationDetailsIn):
+    s = _session(sid)
+    plan = _live_application_plan(s)
+    allowed = {str(field["key"]) for field in plan["fields"]}
+    details = {
+        key: value.strip() if isinstance(value, str) else value
+        for key, value in body.details.items()
+        if key in allowed and value not in (None, "")
+    }
+    s.application_details.setdefault(LIVE_APPLICATION_KEY, {}).update(details)
+    profile_data = s.profile.model_dump()
+    profile_data.update({key: value for key, value in details.items() if key in profile_data})
+    s.profile = type(s.profile).model_validate(profile_data)
+    return _live_application_plan(s)
+
+
+@app.post('/sessions/{sid}/live-application/launch')
+def launch_live_application(sid: str):
+    s = _session(sid)
+    plan = _live_application_plan(s)
+    import subprocess
+    try:
+        profile_dir = Path.cwd() / ".janseva-browser" / sid
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        chrome = _chrome_executable()
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", chrome, "--remote-debugging-port=9222", f"--user-data-dir={profile_dir}", plan["portal_url"]],
+            shell=False,
+        )
+        return {
+            "status": "success",
+            "portal_url": plan["portal_url"],
+            "message": "The official portal opened. Log in and complete any OTP or CAPTCHA yourself, then open the application form.",
+        }
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to launch Google Chrome: {exc}") from exc
+
+
+@app.post('/sessions/{sid}/live-application/scan-open-form')
+def scan_live_application_form(sid: str, port: int = 9222):
+    s = _session(sid)
+    _live_application_plan(s)
+    from app.services.portal_scanner import scan_open_form
+    try:
+        discovered = scan_open_form(port)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "Saarthi could not inspect the opened form. Check that it is fully loaded and try again.") from exc
+    if not discovered["fields"]:
+        raise HTTPException(400, "No application fields were found. Open the actual application form after login, then try again.")
+    s.discovered_forms[LIVE_APPLICATION_KEY] = discovered
+    plan = _live_application_plan(s)
+    plan["scan_message"] = f"Scanned {len(discovered['fields'])} visible form fields and {len(discovered['documents'])} document requirements from the opened page."
+    return plan
+
+
+@app.post('/sessions/{sid}/live-application/automate-fill')
+def automate_live_application_fill(sid: str, port: int = 9222):
+    s = _session(sid)
+    plan = _live_application_plan(s)
+    if not plan["form_scanned"]:
+        raise HTTPException(400, "Scan the opened application form before asking Saarthi to fill it")
+    if plan["missing_fields"]:
+        raise HTTPException(400, "Complete the remaining application details before filling the portal form")
+    fields = [
+        {"key": field["key"], "label": field["label"], "value": field["value"], "type": field["type"]}
+        for field in plan["fields"]
+        if field["value"] not in (None, "") and field["type"] != "file"
+    ]
+    from app.services.generic_form_filler import fill_open_form
+    import threading
+    threading.Thread(target=fill_open_form, args=(fields, port), daemon=True).start()
+    return {
+        "action": "filling",
+        "message": "Saarthi is filling only the reviewed visible fields. It will stop before any save, submit, payment, or final application action.",
+    }

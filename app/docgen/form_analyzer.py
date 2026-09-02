@@ -1,20 +1,20 @@
 import sys
 import argparse
 from selenium import webdriver
-from selenium.webdriver.edge.options import Options
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 def analyze_form(port: int = 9222):
     print("=" * 60)
     print("  JanSeva AI -- Form Analyzer")
     print("=" * 60)
-    print(f"\n[CONNECT] Connecting to Edge on port {port}...")
+    print(f"\n[CONNECT] Connecting to Chrome on port {port}...")
     
-    edge_options = Options()
-    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
+    chrome_options = Options()
+    chrome_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
     
     try:
-        driver = webdriver.Edge(options=edge_options)
+        driver = webdriver.Chrome(options=chrome_options)
         
         # Make sure we are on the correct tab
         for handle in driver.window_handles:
@@ -24,9 +24,9 @@ def analyze_form(port: int = 9222):
                 
         print(f"   [OK] Connected! Current page: {driver.title}")
     except Exception as e:
-        print(f"\n[ERROR] Could not connect to Edge!")
-        print(f"   Make sure you started Edge with:")
-        print(f"   msedge.exe --remote-debugging-port={port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\edge-debug-profile\"")
+        print(f"\n[ERROR] Could not connect to Chrome!")
+        print(f"   Make sure you started Chrome with:")
+        print(f"   chrome.exe --remote-debugging-port={port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\chrome-debug-profile\"")
         sys.exit(1)
 
     print("\n[ANALYZE] Extracting form labels and inputs...\n")

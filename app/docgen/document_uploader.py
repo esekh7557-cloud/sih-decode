@@ -1,5 +1,5 @@
 """
-JanSeva AI - Document Uploader (Edge / Selenium Mode)
+JanSeva AI - Document Uploader (Chrome / Selenium Mode)
 """
 
 import os
@@ -39,7 +39,7 @@ def upload_documents(folder: str, port: int = 9222):
         sys.exit(1)
 
     print("=" * 60)
-    print("  JanSeva AI -- Document Uploader (Edge Debugging Mode)")
+    print("  JanSeva AI -- Document Uploader (Chrome Debugging Mode)")
     print("=" * 60)
     print(f"\n[SCAN] Scanning folder: {data_folder}")
 
@@ -76,17 +76,17 @@ def upload_documents(folder: str, port: int = 9222):
     # ---------------------------------------------------------
     # SELENIUM SETUP
     # ---------------------------------------------------------
-    print(f"\n[CONNECT] Connecting to Edge on port {port}...")
+    print(f"\n[CONNECT] Connecting to Chrome on port {port}...")
     
     from selenium import webdriver
-    from selenium.webdriver.edge.options import Options
+    from selenium.webdriver.chrome.options import Options
 
-    edge_options = Options()
-    # This tells Selenium to attach to the ALREADY RUNNING Edge browser
-    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
+    chrome_options = Options()
+    # This tells Selenium to attach to the ALREADY RUNNING Chrome browser
+    chrome_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
 
     try:
-        driver = webdriver.Edge(options=edge_options)
+        driver = webdriver.Chrome(options=chrome_options)
         
         from selenium.webdriver.common.by import By
         # Ensure we are on the correct tab (Goa Online)
@@ -97,9 +97,9 @@ def upload_documents(folder: str, port: int = 9222):
                 
         print(f"   [OK] Connected! Current page: {driver.title}")
     except Exception as e:
-        print(f"\n[ERROR] Could not connect to Edge!")
-        print(f"   Make sure you started Edge with:")
-        print(f"   msedge.exe --remote-debugging-port={port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\edge-debug-profile\"")
+        print(f"\n[ERROR] Could not connect to Chrome!")
+        print(f"   Make sure you started Chrome with:")
+        print(f"   chrome.exe --remote-debugging-port={port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\chrome-debug-profile\"")
         sys.exit(1)
 
     # ---------------------------------------------------------
@@ -264,7 +264,7 @@ def main():
     )
     parser.add_argument(
         "--folder", "-f",
-        default=r"C:\Users\Vedant\Desktop\data",
+        default=os.path.join(os.getcwd(), "scans"),
         help="Path to folder containing document images"
     )
     parser.add_argument(

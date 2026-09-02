@@ -21,10 +21,20 @@ starts. It provides:
   - Which schemes can I apply for?
   - I need an income certificate.
   - Can I apply for PM-KISAN?
+- Conversational follow-up questions for intent-specific requests. For example,
+  when a citizen asks for a scholarship, JanSeva asks for missing age, student
+  status, income, category, or state details, saves clear answers to the
+  session profile, and refreshes the scholarship matches.
 - Explainable scheme cards with eligibility reason, benefit, and application
   route.
 - Certificate service checklists with documents, fee, processing time, and
   validity.
+- A configuration-driven **Apply with Saarthi** journey: collect missing
+  application fields, open the official portal for citizen login, review the
+  exact values to fill, then upload scanned documents after the citizen
+  reviews the portal form.
+- Voice input and spoken assistant replies in supported browsers. The citizen
+  presses **Finish speaking** before a voice request is sent.
 - An end-session control that removes tracked session data.
 
 ## How it works
@@ -35,7 +45,42 @@ starts. It provides:
 4. OpenRouter enrichment may add extra candidates, but each is labelled for
    manual verification and never overrides rule-based results.
 5. The assistant returns guidance based on the citizen request, profile
-   completeness, service catalog, and scheme matches.
+   completeness, service catalog, and scheme matches. If a request needs more
+   information, it asks for missing profile fields in chat and saves
+   unambiguous follow-up answers to the same in-memory session.
+
+### Applying with Saarthi
+
+For a supported service:
+
+1. Ask for a named service (for example, “I need a residence certificate”) or
+   select it in Services.
+2. Review the listed documents, upload and label available scans, then select
+   **Apply with Saarthi**.
+3. Enter any missing portal fields. Saarthi does not invent answers.
+4. Open the official portal, log in, complete any OTP/CAPTCHA, and open the
+   correct application page yourself.
+5. Select **Scan opened form**. Saarthi reads the visible field labels,
+   required markers, dropdown choices, and upload-row labels from the local
+   browser, then adds newly discovered questions and documents to the plan.
+   It does not read passwords, OTPs, CAPTCHAs, or entered form values.
+6. Review the masked application summary and explicitly ask Saarthi to fill
+   the opened form when that service has a verified mapping. It stops before
+   **Save & Proceed**.
+7. After reviewing the official form, start document upload. Verify the files
+   and submit the final application yourself on the government portal.
+
+The current catalog connects Income, Residence, and Caste Certificates for
+Goa Online. To add another service, add it to `app/data/services.yaml` with:
+
+- its `documents`, fee, processing time, and `portal` or `portal_url`;
+- optional `application_fields` for the answers Saarthi should collect; and
+- an `automation_mapping` whose verified mapping file is in
+  `app/docgen/mappings/` if portal form filling is safe to enable.
+
+Without a verified mapping, Saarthi still prepares the checklist, saves
+service-specific answers for the session, and opens the official site, but
+leaves form entry manual.
 
 ## Quick start
 
@@ -63,6 +108,8 @@ http://127.0.0.1:8000/docs for interactive API documentation.
 - OPENROUTER_API_KEY enables AI Vision document extraction, optional scheme
   enrichment, and browser-agent features. Never commit a real key.
 - OPENROUTER_MODEL selects the OpenRouter model.
+- SERPER_API_KEY optionally enables live official-web guidance. It is never
+  required for the Income Certificate flow's built-in Goa Online link.
 - JANSEVA_OUTPUT_DIR sets the generated document directory.
 - JANSEVA_BASE_URL sets the URL included in QR-code download fallbacks.
 
@@ -81,6 +128,12 @@ Vision implementation.
 | POST | /sessions/{id}/assistant | Ask for scheme or certificate guidance |
 | POST | /sessions/{id}/scan | Extract data from uploaded document images |
 | POST | /sessions/{id}/service | Retrieve a service checklist |
+| GET | /sessions/{id}/applications/{service_id}/readiness | Get a reviewed service application plan |
+| POST | /sessions/{id}/applications/{service_id}/details | Save service-specific application answers |
+| POST | /sessions/{id}/applications/{service_id}/scan-open-form | Scan the logged-in form's visible requirements |
+| POST | /sessions/{id}/launch_browser | Open the official portal for citizen login |
+| POST | /sessions/{id}/automate_fill | Fill reviewed fields; stops before Save & Proceed |
+| POST | /sessions/{id}/automate_upload | Upload scanned documents after portal-form review |
 | DELETE | /sessions/{id} | End the session and wipe tracked artifacts |
 
 ## Current scope and safety
@@ -91,10 +144,13 @@ Vision implementation.
   rules. State-specific catalogs and rule sets can be added incrementally.
 - Final government applications, OTPs, CAPTCHAs, and eligibility decisions
   must be verified by a human authority.
+- Saarthi does not submit an application automatically. Auto-fill is enabled
+  only for services with a verified portal mapping; all others remain guided,
+  human-entered applications.
 - The development server has permissive CORS and should not be exposed to the
   public internet without deployment hardening.
-- Review the scan storage paths before production. The current scan endpoint
-  includes a machine-specific local-copy behavior.
+- Scans are stored only in the current session's local `scans/` folder for the
+  document-upload step; review retention and access controls before production.
 
 ## Tests
 
