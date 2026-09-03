@@ -115,6 +115,100 @@ function setProfileInputValue(key, value) {
   updateReadiness();
 }
 
+function applicationFieldOptions(field) {
+  return (Array.isArray(field.options) ? field.options : [])
+    .map((option) => {
+      if (option && typeof option === "object") {
+        const value = String(option.value ?? option.label ?? "");
+        return { value, label: String(option.label ?? value) };
+      }
+      return { value: String(option), label: String(option) };
+    })
+    .filter((option) => option.value && option.label);
+}
+
+function appendApplicationQuestion(form, field) {
+  const kind = String(field.type || "text").toLowerCase();
+  const options = applicationFieldOptions(field);
+  if (kind === "radio" || kind === "checkbox" || kind === "multi_select") {
+    const group = document.createElement("fieldset");
+    group.className = "question-choices";
+    group.dataset.choiceRequired = field.required ? "true" : "false";
+    const legend = document.createElement("legend");
+    legend.textContent = field.label;
+    group.appendChild(legend);
+    const choices = options.length ? options : [{ value: "true", label: field.label }];
+    choices.forEach((option) => {
+      const choice = document.createElement("label");
+      choice.className = "question-choice";
+      const control = document.createElement("input");
+      control.type = kind === "radio" ? "radio" : "checkbox";
+      control.name = field.key;
+      control.value = option.value;
+      control.required = kind === "radio" && field.required;
+      const text = document.createElement("span");
+      text.textContent = option.label;
+      choice.append(control, text);
+      group.appendChild(choice);
+    });
+    form.appendChild(group);
+    return;
+  }
+
+  const group = document.createElement("label");
+  group.className = "field-group";
+  const label = document.createElement("span");
+  label.textContent = field.label;
+  group.appendChild(label);
+  let input;
+  // A field may be technically text but still have a finite set of choices
+  // (custom portal widgets commonly do this), so choices take precedence.
+  if (options.length) {
+    input = document.createElement("select");
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select an option";
+    input.appendChild(placeholder);
+    options.forEach((option) => {
+      const choice = document.createElement("option");
+      choice.value = option.value;
+      choice.textContent = option.label;
+      input.appendChild(choice);
+    });
+  } else if (kind === "textarea") {
+    input = document.createElement("textarea");
+  } else {
+    input = document.createElement("input");
+    const supported = new Set(["date", "datetime-local", "email", "month", "number", "range", "tel", "time", "url", "week"]);
+    input.type = supported.has(kind) ? kind : "text";
+    if (kind === "number") input.inputMode = "decimal";
+  }
+  input.name = field.key;
+  input.required = field.required !== false;
+  input.autocomplete = "off";
+  ["placeholder", "min", "max", "step", "pattern"].forEach((key) => {
+    if (field[key] !== undefined && field[key] !== "") input[key] = field[key];
+  });
+  if (field.max_length) input.maxLength = Number(field.max_length);
+  group.appendChild(input);
+  form.appendChild(group);
+}
+
+function applicationFormAnswers(form) {
+  const answers = {};
+  for (const [key, value] of new FormData(form).entries()) {
+    answers[key] = Object.prototype.hasOwnProperty.call(answers, key)
+      ? (Array.isArray(answers[key]) ? answers[key].concat(value) : [answers[key], value])
+      : value;
+  }
+  return answers;
+}
+
+function requiredChoiceIsMissing(form) {
+  return Array.from(form.querySelectorAll("[data-choice-required='true']"))
+    .some((group) => !group.querySelector("input:checked"));
+}
+
 function onboardingValue(key) {
   const selector = profileInputSelector(key);
   if (!selector || !$(selector)) return "";
@@ -1056,19 +1150,7 @@ function renderSaarthiApplication(plan) {
     copy.textContent = "Saarthi needs these answers before it can fill the official form. It will not invent any missing information.";
     const form = document.createElement("form");
     form.className = "application-detail-form";
-    plan.fields.filter((field) => field.missing).forEach((field) => {
-      const group = document.createElement("label");
-      group.className = "field-group";
-      group.textContent = field.label;
-      const input = document.createElement("input");
-      input.name = field.key;
-      input.required = true;
-      input.autocomplete = "off";
-      if (field.key === "email") input.type = "email";
-      else if (field.key === "mobile" || field.key === "pincode") input.inputMode = "numeric";
-      group.appendChild(input);
-      form.appendChild(group);
-    });
+    plan.fields.filter((field) => field.missing).forEach((field) => appendApplicationQuestion(form, field));
     const save = document.createElement("button");
     save.type = "submit";
     save.className = "secondary-button full-width";
@@ -1077,7 +1159,11 @@ function renderSaarthiApplication(plan) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
-      const updates = Object.fromEntries(new FormData(form).entries());
+      if (requiredChoiceIsMissing(form)) {
+        showToast("Choose at least one option before continuing.", "info");
+        return;
+      }
+      const updates = applicationFormAnswers(form);
       try {
         await api("/sessions/" + sessionId + "/applications/" + plan.service_id + "/details", "POST", { details: updates });
         showToast("Application details saved. Please review them now.", "success");
@@ -1351,33 +1437,7 @@ function renderLiveApplication(plan) {
     copy.textContent = "Saarthi could not find these required answers in your saved details or documents. Please provide them before filling the form.";
     const form = document.createElement("form");
     form.className = "application-detail-form";
-    plan.fields.filter((field) => field.missing).forEach((field) => {
-      const group = document.createElement("label");
-      group.className = "field-group";
-      group.textContent = field.label;
-      let input;
-      if (field.type === "select" && field.options && field.options.length) {
-        input = document.createElement("select");
-        const placeholder = document.createElement("option");
-        placeholder.value = "";
-        placeholder.textContent = "Select an option";
-        input.appendChild(placeholder);
-        field.options.forEach((option) => {
-          const choice = document.createElement("option");
-          choice.value = option;
-          choice.textContent = option;
-          input.appendChild(choice);
-        });
-      } else {
-        input = document.createElement("input");
-        input.type = field.type === "email" ? "email" : "text";
-      }
-      input.name = field.key;
-      input.required = true;
-      input.autocomplete = "off";
-      group.appendChild(input);
-      form.appendChild(group);
-    });
+    plan.fields.filter((field) => field.missing).forEach((field) => appendApplicationQuestion(form, field));
     const save = document.createElement("button");
     save.type = "submit";
     save.className = "secondary-button full-width";
@@ -1386,9 +1446,13 @@ function renderLiveApplication(plan) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
+      if (requiredChoiceIsMissing(form)) {
+        showToast("Choose at least one option before continuing.", "info");
+        return;
+      }
       try {
         const updatedPlan = await api("/sessions/" + sessionId + "/live-application/details", "POST", {
-          details: Object.fromEntries(new FormData(form).entries()),
+          details: applicationFormAnswers(form),
         });
         showToast("Application details saved. Please review them now.", "success");
         renderLiveApplication(updatedPlan);

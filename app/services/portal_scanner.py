@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services.chrome_cdp import ChromeDebugError, evaluate_open_form
+
 
 def _key(value: str, fallback: str) -> str:
     key = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
@@ -16,32 +18,9 @@ def _key(value: str, fallback: str) -> str:
 
 
 def scan_open_form(port: int = 9222) -> dict[str, Any]:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-
-    options = Options()
-    options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
     try:
-        driver = webdriver.Chrome(options=options)
-    except Exception as exc:
-        raise RuntimeError(
-            "Could not connect to the Saarthi browser. Open the official portal with Saarthi first."
-        ) from exc
-
-    # Prefer the visible tab containing the most controls. This works for new
-    # government portals without relying on a domain-specific URL.
-    best_handle, best_count = driver.current_window_handle, -1
-    for handle in driver.window_handles:
-        driver.switch_to.window(handle)
-        count = driver.execute_script(
-            "return document.querySelectorAll('input, select, textarea').length;"
-        )
-        if count > best_count:
-            best_handle, best_count = handle, count
-    driver.switch_to.window(best_handle)
-
-    data = driver.execute_script(
-        r"""
+        data = evaluate_open_form(
+        r"""(() => {
         function clean(text) {
           return (text || '').replace(/\*/g, '').replace(/\s+/g, ' ').trim();
         }
@@ -61,30 +40,125 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
           }
           return clean(el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || el.id);
         }
+        function groupLabelFor(el, fallback) {
+          // A radio button's nearest <label> is normally its option (for
+          // example, "Self"), not the question. Prefer the group heading so
+          // the preparation screen can ask "Applying for" with each option.
+          const fieldset = el.closest('fieldset');
+          if (fieldset) {
+            const legend = fieldset.querySelector('legend');
+            if (legend && clean(legend.innerText)) return clean(legend.innerText);
+          }
+          const labelledBy = (el.getAttribute('aria-labelledby') || '')
+            .split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean)
+            .map((node) => clean(node.innerText)).filter(Boolean).join(' ');
+          if (labelledBy) return labelledBy;
+          const container = el.closest('[role="radiogroup"], [role="group"], .radio-group, .checkbox-group, .form-group, .field, .row, li, td');
+          if (container) {
+            const heading = container.querySelector('legend, .control-label, .form-label, .field-label, [data-field-label]');
+            if (heading && clean(heading.innerText)) return clean(heading.innerText);
+            const plainLabel = Array.from(container.querySelectorAll('label')).find((node) =>
+              node !== el.closest('label') &&
+              !node.htmlFor &&
+              !node.querySelector('input[type="radio"], input[type="checkbox"]') &&
+              clean(node.innerText)
+            );
+            if (plainLabel) return clean(plainLabel.innerText);
+            const explicit = Array.from(container.querySelectorAll('label[for], th')).find((node) => {
+              if (node === el.closest('label') || !clean(node.innerText)) return false;
+              if (node.tagName.toLowerCase() !== 'label') return true;
+              const target = document.getElementById(node.htmlFor);
+              return !target || !['radio', 'checkbox'].includes(target.type);
+            });
+            if (explicit) return clean(explicit.innerText);
+          }
+          return fallback;
+        }
+        function choicesFor(el) {
+          const found = [];
+          const add = (value, label) => {
+            const cleanValue = String(value || '').trim();
+            const cleanLabel = clean(label);
+            if (!cleanLabel) return;
+            const key = cleanValue || cleanLabel;
+            if (!found.some((item) => item.value === key)) {
+              found.push({ value: key, label: cleanLabel });
+            }
+          };
+          if (el.tagName.toLowerCase() === 'select') {
+            Array.from(el.options).filter((option) => option.value).forEach((option) => add(option.value, option.text));
+          }
+          // Native datalist inputs and accessible comboboxes often keep their
+          // choices outside the input itself. Read only labels/options, never
+          // the applicant's entered value.
+          const references = [
+            el.getAttribute('list'),
+            el.getAttribute('aria-controls'),
+            el.getAttribute('aria-owns'),
+          ].filter(Boolean).flatMap((value) => String(value).split(/\s+/));
+          references.forEach((id) => {
+            const list = document.getElementById(id);
+            if (!list) return;
+            list.querySelectorAll('option, [role="option"], .dropdown-item, .select2-results__option, .chosen-results li').forEach((option) => {
+              if (option.getAttribute('aria-disabled') === 'true') return;
+              add(option.value || option.getAttribute('data-value') || option.getAttribute('data-id') || option.id, option.getAttribute('aria-label') || option.innerText || option.textContent);
+            });
+          });
+          const container = el.closest('.form-group, .field, .row, li, td, [role="group"]');
+          if (!found.length && container) {
+            container.querySelectorAll('[role="option"], .dropdown-menu .dropdown-item, .select2-results__option, .chosen-results li').forEach((option) => {
+              if (option.getAttribute('aria-disabled') === 'true') return;
+              add(option.getAttribute('data-value') || option.getAttribute('data-id') || option.id, option.getAttribute('aria-label') || option.innerText || option.textContent);
+            });
+          }
+          return found.slice(0, 30);
+        }
         const fields = [];
         const seen = new Set();
-        const controls = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]), select, textarea');
+        const controls = Array.from(document.querySelectorAll(
+          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]), select, textarea, [role="combobox"], [aria-haspopup="listbox"]'
+        ));
         controls.forEach((el, index) => {
           const box = el.getBoundingClientRect();
-          if (box.width === 0 || box.height === 0 || el.disabled) return;
-          const label = labelFor(el);
+          // Select libraries commonly hide the native <select> and render a
+          // visible custom control. Its option list remains the reliable
+          // source of choices, so retain hidden selects with a real label.
+          const hiddenNativeSelect = el.tagName.toLowerCase() === 'select';
+          if ((box.width === 0 || box.height === 0) && !hiddenNativeSelect) return;
+          if (el.disabled) return;
+          const tag = el.tagName.toLowerCase();
+          const optionOrFieldLabel = labelFor(el);
+          const inputType = el.type || tag;
+          const label = inputType === 'radio' || inputType === 'checkbox'
+            ? groupLabelFor(el, optionOrFieldLabel)
+            : optionOrFieldLabel;
           if (!label || label.length < 2 || /search|captcha|otp|password/i.test(label)) return;
-          const type = el.tagName.toLowerCase() === 'select' ? 'select' : (el.type || el.tagName.toLowerCase());
+          const choices = choicesFor(el);
+          const isChoiceWidget = el.getAttribute('role') === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox';
+          const type = tag === 'select'
+            ? (el.multiple ? 'multi_select' : 'select')
+            : (isChoiceWidget && choices.length ? 'select' : (tag === 'textarea' ? 'textarea' : (el.type || tag)));
           const baseKey = el.name || el.id || label;
           const unique = baseKey + '|' + type;
           if (seen.has(unique) && type !== 'radio' && type !== 'checkbox') return;
           seen.add(unique);
           const optionLabel = type === 'radio' || type === 'checkbox'
-            ? clean((el.closest('label') || {}).innerText || el.value || label)
+            ? clean((el.closest('label') || {}).innerText || el.value || optionOrFieldLabel)
             : '';
           fields.push({
             key: baseKey,
             label,
             type,
             required: !!(el.required || el.getAttribute('aria-required') === 'true' || /required|mandatory/i.test((el.closest('tr, .form-group, .field, .row') || {}).innerText || '')),
-            options: type === 'select'
-              ? Array.from(el.options).filter(o => o.value).map(o => clean(o.text)).slice(0, 30)
-              : (optionLabel ? [optionLabel] : [])
+            options: type === 'select' || type === 'multi_select'
+              ? choices
+              : (optionLabel ? [{ value: el.value || optionLabel, label: optionLabel }] : []),
+            placeholder: clean(el.getAttribute('placeholder')),
+            min: el.getAttribute('min') || '',
+            max: el.getAttribute('max') || '',
+            step: el.getAttribute('step') || '',
+            pattern: el.getAttribute('pattern') || '',
+            max_length: Number(el.getAttribute('maxlength')) > 0 ? Number(el.getAttribute('maxlength')) : null
           });
         });
         const documents = new Set();
@@ -101,8 +175,11 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
           }
         });
         return { fields, documents: Array.from(documents).slice(0, 40), url: location.href, title: document.title };
-        """
-    )
+        })()""",
+        port,
+        )
+    except ChromeDebugError as exc:
+        raise RuntimeError(str(exc)) from exc
 
     fields, used_keys = [], set()
     grouped_controls = {}
@@ -113,10 +190,17 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
             group_key = (raw_key, item_type)
             if group_key in grouped_controls:
                 existing = grouped_controls[group_key]
-                existing["options"] = list(dict.fromkeys(existing.get("options", []) + item.get("options", [])))
+                options = existing.get("options", []) + item.get("options", [])
+                existing["options"] = list({
+                    str(option.get("value", option) if isinstance(option, dict) else option): option
+                    for option in options
+                }.values())
                 existing["required"] = existing.get("required", False) or bool(item.get("required"))
                 continue
-            grouped_controls[group_key] = dict(item)
+            # Keep the object returned in ``fields`` identical to the grouped
+            # object so later radio/checkbox options are not merged into a
+            # discarded copy.
+            grouped_controls[group_key] = item
         fields.append(item)
 
     normalised_fields, used_keys = [], set()
@@ -135,10 +219,16 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
             "type": item.get("type", "text"),
             "required": bool(item.get("required")),
             "options": item.get("options", []),
+            "placeholder": item.get("placeholder", ""),
+            "min": item.get("min", ""),
+            "max": item.get("max", ""),
+            "step": item.get("step", ""),
+            "pattern": item.get("pattern", ""),
+            "max_length": item.get("max_length"),
         })
     return {
-        "url": str(data.get("url") or driver.current_url),
-        "title": str(data.get("title") or driver.title),
+        "url": str(data.get("url") or ""),
+        "title": str(data.get("title") or ""),
         "fields": normalised_fields,
         "documents": [str(item) for item in data.get("documents", []) if str(item).strip()],
     }

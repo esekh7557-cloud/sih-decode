@@ -794,14 +794,25 @@ async def citizen_assistant(sid: str, body: AssistantIn):
     s.eligibility = results
 
     gaps = _profile_gaps(s.profile)
+    intent_missing = _missing_assistant_fields(s.profile, intent) if intent else []
     service_terms = ("certificate", "certificates", "document", "income certificate", "residence", "caste")
     scheme_terms = ("scheme", "schemes", "yojana", "eligible", "eligibility", "benefit", "apply", "kisan", "awas", "ujjwala", "ayushman", "mudra", "scholarship")
 
     requested = _requested_matches(message, results)
     live_guidance = None
     application_service_id = None
-    if wants_live_search(message):
-        live_guidance = await get_live_guidance(message, s.profile.state)
+    # Search only after the request-specific intake is complete. This avoids
+    # showing an unqualified portal before we have the facts needed to find a
+    # relevant scheme. Scholarship intent always triggers an official-source
+    # search once its required details have been collected.
+    should_search = not intent_missing and (wants_live_search(message) or intent in {"scholarship", "scheme"})
+    if should_search:
+        search_topic = previous_context.get("request") or message
+        live_guidance = await get_live_guidance(
+            search_topic,
+            s.profile.state,
+            s.profile.model_dump(),
+        )
 
     available_services = list_services(s.profile.state)
     for candidate_id, candidate in available_services.items():
@@ -810,10 +821,14 @@ async def citizen_assistant(sid: str, body: AssistantIn):
             break
 
     recommendations = results
-    intent_missing = _missing_assistant_fields(s.profile, intent) if intent else []
     if intent and intent_missing:
         # Keep the request alive until its missing facts have been answered.
-        s.assistant_context = {"intent": intent, "fields": intent_fields, "missing_fields": intent_missing}
+        s.assistant_context = {
+            "intent": intent,
+            "fields": intent_fields,
+            "missing_fields": intent_missing,
+            "request": previous_context.get("request") or message,
+        }
         gaps = [ASSISTANT_FIELD_LABELS.get(field, field) for field in intent_missing]
         reply = _assistant_follow_up(intent, intent_missing, s.profile, saved_updates)
     elif intent and not application_service_id:
@@ -968,14 +983,14 @@ def confirm_and_deliver(sid: str, purpose: str = ""):
 @app.post("/sessions/{sid}/automate_upload")
 def trigger_upload_automation(sid: str):
     """Trigger physical kiosk OS automation to orchestrate file uploads."""
-    s = _session(sid)
-    
+    _session(sid)
+
     from app.docgen.document_uploader import upload_documents
     import threading
     import os
-    
+
     scan_dir = os.path.join(os.getcwd(), "scans", sid)
-    
+
     def run_upload():
         try:
             upload_documents(scan_dir, 9222)
@@ -983,7 +998,6 @@ def trigger_upload_automation(sid: str):
             print(f"Upload failed: {e}")
 
     threading.Thread(target=run_upload, daemon=True).start()
-    return {"action": "uploading"}
     return {"action": "uploading"}
 
 
@@ -1051,39 +1065,21 @@ async def api_analyze_form(req: AnalyzeRequest):
         raise HTTPException(500, f"Failed to analyze form: {str(e)}")
 
 @app.post("/api/execute-form")
-async def api_execute_form(request: Request):
-    """Trigger the CUA to fill the form using the provided structured data."""
-    try:
-        from app.agent.executor import execute_form_fill
-        form = await request.form()
-        url = form.get("url")
-        if not url:
-            raise HTTPException(400, "URL is required")
-            
-        data = {}
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_dir_path = Path(temp_dir)
-            
-            for key, value in form.multi_items():
-                if key == "url":
-                    continue
-                if isinstance(value, UploadFile):
-                    if value.filename:
-                        safe_name = Path(value.filename).name
-                        temp_file_path = temp_dir_path / safe_name
-                        with open(temp_file_path, "wb") as f:
-                            shutil.copyfileobj(value.file, f)
-                        data[key] = str(temp_file_path.absolute())
-                    else:
-                        data[key] = ""
-                else:
-                    data[key] = value
-                    
-            result = await execute_form_fill(str(url), data)
-            
-        return {"status": "success", "message": result}
-    except Exception as e:
-        raise HTTPException(500, f"Failed to execute form fill: {str(e)}")
+async def api_execute_form(_: Request):
+    """Retired unsafe browser agent endpoint.
+
+    Arbitrary multipart data cannot be verified as the citizen's reviewed
+    application plan. The old agent could upload files and submit a form, so
+    it is deliberately unavailable instead of attempting a best-effort map.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "This legacy form executor is disabled because it could upload or "
+            "submit an application. Use the reviewed application flow instead; "
+            "it fills visible fields only and stops for your review."
+        ),
+    )
 
 
 class UploadDocsIn(BaseModel):
@@ -1175,6 +1171,7 @@ def _launch_chrome(sid: str, url: str) -> None:
         "--no-first-run",
         "--no-default-browser-check",
         "--remote-debugging-port=9222",
+        "--remote-allow-origins=http://localhost",
         f"--user-data-dir={profile_dir}",
         url,
     ]
@@ -1219,6 +1216,92 @@ def _application_field_keys(service: dict, mapping: dict, discovered: dict | Non
     return list(DEFAULT_APPLICATION_FIELDS)
 
 
+def _normalise_portal_field_text(value: Any) -> str:
+    """Make portal labels, mapping aliases, and DOM names comparable."""
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def _field_option_labels(field: dict) -> set[str]:
+    """Return normalised visible labels for one scanned choice control."""
+    labels: set[str] = set()
+    for option in field.get("options", []):
+        if isinstance(option, dict):
+            value = option.get("label") or option.get("value")
+        else:
+            value = option
+        normalised = _normalise_portal_field_text(value)
+        if normalised:
+            labels.add(normalised)
+    return labels
+
+
+def _mapped_scanned_field(
+    application_key: str,
+    mapping: dict,
+    discovered_by_key: dict[str, dict],
+    discovered_fields: list[dict],
+) -> dict:
+    """Find the DOM field behind a stable application/mapping key.
+
+    Portal controls use implementation-specific names such as ``drpPurpose_``
+    while the reviewed application plan deliberately uses stable keys such as
+    ``purpose``.  A direct-key lookup therefore loses the scanned control's
+    type, choices and constraints for mapped services.  Match by visible
+    labels first, then by an unambiguous radio/checkbox option group.
+    """
+    direct = discovered_by_key.get(application_key)
+    if direct:
+        return direct
+    if not mapping:
+        return {}
+
+    aliases = [application_key, _display_label(application_key, mapping)]
+    configured_aliases = mapping.get(application_key, [])
+    if isinstance(configured_aliases, (list, tuple, set)):
+        aliases.extend(configured_aliases)
+    elif configured_aliases:
+        aliases.append(configured_aliases)
+    aliases = {
+        normalised
+        for alias in aliases
+        if (normalised := _normalise_portal_field_text(alias))
+    }
+    if not aliases:
+        return {}
+
+    best_field: dict = {}
+    best_score = 0
+    for field in discovered_fields:
+        label = _normalise_portal_field_text(field.get("label"))
+        dom_key = _normalise_portal_field_text(field.get("key"))
+        placeholder = _normalise_portal_field_text(field.get("placeholder"))
+        score = 0
+
+        # Exact visible labels are the most reliable signal. DOM keys and
+        # placeholders are useful fallbacks for portals with imperfect labels.
+        for alias in aliases:
+            if alias == label:
+                score = max(score, 120)
+            elif alias == dom_key:
+                score = max(score, 115)
+            elif alias == placeholder:
+                score = max(score, 105)
+            elif len(alias) >= 5 and (alias in label or alias in dom_key or alias in placeholder):
+                score = max(score, 80)
+
+        # Some portals label a radio group only through its choices. Caste
+        # Certificate's mapping, for example, names "Self" and "Relative or
+        # others" rather than the group heading. Require two matched choices
+        # so a single generic word cannot bind an unrelated field.
+        option_matches = len(aliases & _field_option_labels(field))
+        if field.get("type") in {"radio", "checkbox"} and option_matches >= 2:
+            score = max(score, 110 + min(option_matches, 5))
+
+        if score > best_score:
+            best_field, best_score = field, score
+    return best_field
+
+
 def _profile_suggestion(label: str, profile: dict) -> Any:
     """Suggest a saved profile value for a discovered field; never store it silently."""
     label = label.lower()
@@ -1253,6 +1336,23 @@ def _safe_application_value(field: str, value: Any) -> Any:
     return value
 
 
+def _field_input_metadata(field: dict) -> dict:
+    """Return only UI hints read from a visible portal control.
+
+    These hints let the preparation screen ask the same kind of question as
+    the portal (date, number, long text, choices, etc.) without reading or
+    exposing any portal value.
+    """
+    return {
+        "placeholder": str(field.get("placeholder") or ""),
+        "min": str(field.get("min") or ""),
+        "max": str(field.get("max") or ""),
+        "step": str(field.get("step") or ""),
+        "pattern": str(field.get("pattern") or ""),
+        "max_length": field.get("max_length"),
+    }
+
+
 def _extracted_application_values(session: Session) -> Dict[str, Any]:
     """Combine document-only values so portal fields can reuse OCR results."""
     values: Dict[str, Any] = {}
@@ -1274,14 +1374,19 @@ def application_readiness(sid: str, service_id: str):
     saved_details = s.application_details.get(service_id, {})
     extracted_details = _extracted_application_values(s)
     discovered = s.discovered_forms.get(service_id, {})
+    discovered_fields = [
+        field for field in discovered.get("fields", [])
+        if isinstance(field, dict) and field.get("key")
+    ]
     discovered_by_key = {
         str(field.get("key")): field
-        for field in discovered.get("fields", [])
-        if isinstance(field, dict) and field.get("key")
+        for field in discovered_fields
     }
     fields, missing_fields = [], []
     for key in _application_field_keys(service, mapping, discovered):
-        discovered_field = discovered_by_key.get(key, {})
+        discovered_field = _mapped_scanned_field(
+            key, mapping, discovered_by_key, discovered_fields
+        )
         value = saved_details.get(key, profile.get(key, ""))
         if value in (None, ""):
             value = extracted_details.get(key, "")
@@ -1299,6 +1404,7 @@ def application_readiness(sid: str, service_id: str):
             "required": required,
             "type": str(discovered_field.get("type", "text")),
             "options": discovered_field.get("options", []),
+            **_field_input_metadata(discovered_field),
         })
 
     document_types = sorted({
@@ -1478,6 +1584,7 @@ def _live_application_plan(s: Session) -> dict:
             "required": required,
             "type": str(field.get("type", "text")),
             "options": field.get("options", []),
+            **_field_input_metadata(field),
         })
 
     document_types = sorted({

@@ -12,4 +12,5 @@ browser-use
 playwright
 langchain-openai
 python-multipart>=0.0.9
+websocket-client>=1.7
 selenium>=4.0.0

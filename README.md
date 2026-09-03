@@ -50,6 +50,10 @@ starts. It provides:
    completeness, service catalog, and scheme matches. If a request needs more
    information, it asks for missing profile fields in chat and saves
    unambiguous follow-up answers to the same in-memory session.
+6. Once a request has the details needed for a useful match, live guidance can
+   search recognised official government domains using broad eligibility facts
+   (never name, phone, Aadhaar, or address), then show the official source and
+   **Apply with Saarthi** handoff.
 
 ### Applying with Saarthi
 

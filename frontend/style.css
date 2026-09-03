@@ -375,7 +375,7 @@ h2 { margin-bottom: 0; font-size: 20px; letter-spacing: -0.03em; }
 .live-guidance-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 13px; }
 .live-guidance-actions .primary-button, .live-guidance-actions .secondary-button { flex: 1 1 210px; }
 
-input, select {
+input, select, textarea {
   width: 100%;
   padding: 11px 12px;
   color: var(--ink);
@@ -384,7 +384,7 @@ input, select {
   border-radius: 9px;
   background: #fff;
 }
-input:focus, select:focus { border-color: #7796ef; box-shadow: 0 0 0 3px rgba(40,87,231,.1); }
+input:focus, select:focus, textarea:focus { border-color: #7796ef; box-shadow: 0 0 0 3px rgba(40,87,231,.1); }
 
 .profile-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .field-group { display: grid; gap: 7px; }
@@ -490,7 +490,13 @@ input:focus, select:focus { border-color: #7796ef; box-shadow: 0 0 0 3px rgba(40
 .document-missing { color: #a55f16; }
 .application-detail-form { display: grid; gap: 9px; }
 .application-detail-form .field-group { display: grid; gap: 5px; font-size: 12px; font-weight: 750; }
-.application-detail-form input { min-height: 36px; }
+.application-detail-form input, .application-detail-form select, .application-detail-form textarea { min-height: 36px; }
+.application-detail-form textarea { resize: vertical; }
+.question-choices { display: grid; gap: 7px; margin: 0; padding: 0; border: 0; }
+.question-choices legend { margin-bottom: 2px; color: #2d4266; font-size: 12px; font-weight: 750; }
+.question-choice { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 8px 10px; color: #354c70; border: 1px solid #d7e3fa; border-radius: 8px; background: #fff; font-size: 12px; font-weight: 650; cursor: pointer; }
+.question-choice:has(input:checked) { color: #244aa0; border-color: #86a9ef; background: #edf4ff; }
+.question-choice input { width: auto; min-height: auto !important; margin: 0; accent-color: var(--blue); }
 .ready-message { color: #167466 !important; font-weight: 750; }
 .automation-safety, .final-submission-note { padding: 9px; color: #815111 !important; border-radius: 8px; background: #fff6e2; font-size: 11px !important; font-weight: 700; }
 .review-list { display: grid; gap: 6px; margin: 0; }

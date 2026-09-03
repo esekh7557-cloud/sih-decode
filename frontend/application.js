@@ -305,20 +305,6 @@ async function scanOpenForm(button) {
     applicationPlan = await api(path, "POST");
     await goToApplicationStep("documents", applicationPlan.scan_message || "Login confirmed. Upload the required documents now.");
   } catch (error) {
-    if (applicationPlan.application_type !== "live_guidance") {
-      try {
-        applicationPlan = await api(
-          "/sessions/" + sessionId + "/applications/" + encodeURIComponent(applicationPlan.service_id) + "/readiness"
-        );
-        await goToApplicationStep(
-          "documents",
-          "Login confirmed. Saarthi is showing the verified document checklist; requirements can be checked again from the official form before submission."
-        );
-        return;
-      } catch (_) {
-        // Keep the original portal-scan error when the fallback cannot load.
-      }
-    }
     button.disabled = false;
     button.textContent = "I am logged in — continue to documents";
     showAlert(error.message, "error");
@@ -367,6 +353,13 @@ function renderPortalStep(plan) {
   scanned.className = "ready-message";
   scanned.textContent = "Saarthi found the requirements on " + ((plan.scanned_form && plan.scanned_form.title) || "the opened application form") + ".";
   flow.appendChild(scanned);
+  const recheck = document.createElement("button");
+  recheck.type = "button";
+  recheck.className = "secondary-button full-width";
+  recheck.textContent = "Recheck form requirements";
+  recheck.disabled = !portalOpened;
+  recheck.addEventListener("click", () => scanOpenForm(recheck));
+  flow.appendChild(recheck);
   const next = document.createElement("button");
   next.type = "button";
   next.className = "primary-button full-width";
@@ -376,6 +369,73 @@ function renderPortalStep(plan) {
   setProgress("portal");
 }
 
+function fieldOptions(field) {
+  return (Array.isArray(field.options) ? field.options : [])
+    .map((option) => {
+      if (option && typeof option === "object") {
+        const value = String(option.value ?? option.label ?? "");
+        return { value, label: String(option.label ?? value) };
+      }
+      return { value: String(option), label: String(option) };
+    })
+    .filter((option) => option.value && option.label);
+}
+
+function applyFieldConstraints(input, field) {
+  if (field.placeholder) input.placeholder = field.placeholder;
+  if (field.min !== undefined && field.min !== "") input.min = field.min;
+  if (field.max !== undefined && field.max !== "") input.max = field.max;
+  if (field.step) input.step = field.step;
+  if (field.pattern) input.pattern = field.pattern;
+  if (field.max_length) input.maxLength = Number(field.max_length);
+}
+
+function choiceControl(field, options, multiple = false) {
+  const choices = document.createElement("fieldset");
+  choices.className = "question-choices";
+  choices.dataset.choiceRequired = field.required ? "true" : "false";
+  choices.dataset.fieldKey = field.key;
+  const legend = document.createElement("legend");
+  legend.textContent = field.label;
+  choices.appendChild(legend);
+  options.forEach((option) => {
+    const choice = document.createElement("label");
+    choice.className = "question-choice";
+    const control = document.createElement("input");
+    control.type = multiple ? "checkbox" : "radio";
+    control.name = field.key;
+    control.value = option.value;
+    control.required = field.required && !multiple;
+    const text = document.createElement("span");
+    text.textContent = option.label;
+    choice.append(control, text);
+    choices.appendChild(choice);
+  });
+  return choices;
+}
+
+function answersFromDetailForm(form) {
+  const answers = {};
+  for (const [key, value] of new FormData(form).entries()) {
+    if (Object.prototype.hasOwnProperty.call(answers, key)) {
+      answers[key] = Array.isArray(answers[key]) ? answers[key].concat(value) : [answers[key], value];
+    } else {
+      answers[key] = value;
+    }
+  }
+  form.querySelectorAll("[data-choice-required='true']").forEach((group) => {
+    const selected = group.querySelector("input:checked");
+    if (!selected) group.classList.add("question-choices-error");
+    else group.classList.remove("question-choices-error");
+  });
+  return answers;
+}
+
+function hasUnansweredRequiredChoices(form) {
+  return Array.from(form.querySelectorAll("[data-choice-required='true']"))
+    .some((group) => !group.querySelector("input:checked"));
+}
+
 function renderMissingDetails(flow, plan) {
   const details = document.createElement("section");
   details.className = "application-step application-details";
@@ -383,6 +443,14 @@ function renderMissingDetails(flow, plan) {
   title.textContent = "Details not found in your documents";
   const copy = document.createElement("p");
   copy.textContent = "Please provide these required answers. Saarthi will not invent information that is missing from your profile or documents.";
+  const recheck = document.createElement("button");
+  recheck.type = "button";
+  recheck.className = "secondary-button full-width";
+  recheck.textContent = plan.form_scanned
+    ? "Recheck choices from the official form"
+    : "Scan choices from the official form";
+  recheck.disabled = !portalOpened;
+  recheck.addEventListener("click", () => scanOpenForm(recheck));
   const missingFields = (plan.fields || []).filter((field) => field.missing);
   if (!missingFields.length) {
     copy.textContent = "Saarthi found all required details in your saved profile and uploaded documents.";
@@ -391,7 +459,7 @@ function renderMissingDetails(flow, plan) {
     next.className = "primary-button full-width";
     next.textContent = "Continue to review";
     next.addEventListener("click", () => goToApplicationStep("review"));
-    details.append(title, copy, next);
+    details.append(title, copy, recheck, next);
     flow.appendChild(details);
     return;
   }
@@ -401,14 +469,27 @@ function renderMissingDetails(flow, plan) {
   const form = document.createElement("form");
   form.className = "application-detail-form";
   [currentField].forEach((field) => {
+    const options = fieldOptions(field);
+    const kind = String(field.type || "text").toLowerCase();
+    if (kind === "radio") {
+      form.appendChild(choiceControl(field, options, false));
+      return;
+    }
+    if (kind === "checkbox" || kind === "multi_select") {
+      form.appendChild(choiceControl(field, options.length ? options : [{ value: "true", label: field.label }], true));
+      return;
+    }
+
     const group = document.createElement("label");
     group.className = "field-group";
-    group.textContent = field.label;
+    const label = document.createElement("span");
+    label.textContent = field.label;
+    group.appendChild(label);
     let input;
-    const options = (Array.isArray(field.options) ? field.options : [])
-      .map((option) => typeof option === "object" ? (option.label || option.value || "") : option)
-      .filter(Boolean);
-    if (options.length) {
+    // Some portals expose a list of choices alongside a control they label
+    // as text (for example a custom Purpose picker). Detected choices are
+    // authoritative, so present them instead of an unrestricted text box.
+    if ((kind === "select" || options.length) && options.length) {
       input = document.createElement("select");
       const placeholder = document.createElement("option");
       placeholder.value = "";
@@ -416,18 +497,22 @@ function renderMissingDetails(flow, plan) {
       input.appendChild(placeholder);
       options.forEach((option) => {
         const choice = document.createElement("option");
-        choice.value = option;
-        choice.textContent = option;
+        choice.value = option.value;
+        choice.textContent = option.label;
         input.appendChild(choice);
       });
+    } else if (kind === "textarea") {
+      input = document.createElement("textarea");
     } else {
       input = document.createElement("input");
-      input.type = field.type === "email" ? "email" : "text";
-      if (field.type === "number") input.inputMode = "numeric";
+      const supported = new Set(["date", "datetime-local", "email", "month", "number", "range", "tel", "time", "url", "week"]);
+      input.type = supported.has(kind) ? kind : "text";
+      if (kind === "number") input.inputMode = "decimal";
     }
     input.name = field.key;
-    input.required = true;
+    input.required = field.required;
     input.autocomplete = "off";
+    applyFieldConstraints(input, field);
     group.appendChild(input);
     form.appendChild(group);
   });
@@ -439,12 +524,17 @@ function renderMissingDetails(flow, plan) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
+    if (hasUnansweredRequiredChoices(form)) {
+      answersFromDetailForm(form);
+      showAlert("Choose at least one option before continuing.", "info");
+      return;
+    }
     save.disabled = true;
     try {
       const path = plan.application_type === "live_guidance"
         ? "/sessions/" + sessionId + "/live-application/details"
         : "/sessions/" + sessionId + "/applications/" + encodeURIComponent(plan.service_id) + "/details";
-      applicationPlan = await api(path, "POST", { details: Object.fromEntries(new FormData(form).entries()) });
+      applicationPlan = await api(path, "POST", { details: answersFromDetailForm(form) });
       if (applicationPlan.missing_fields && applicationPlan.missing_fields.length) {
         showAlert("Answer saved. Here is the next missing detail.", "success");
         renderPlan(applicationPlan);
@@ -456,7 +546,7 @@ function renderMissingDetails(flow, plan) {
       showAlert(error.message, "error");
     }
   });
-  details.append(title, copy, form);
+  details.append(title, copy, recheck, form);
   flow.appendChild(details);
 }
 
@@ -474,7 +564,7 @@ function renderReviewStep(flow, plan) {
     const label = document.createElement("dt");
     label.textContent = field.label;
     const value = document.createElement("dd");
-    value.textContent = field.value || "Not provided";
+    value.textContent = Array.isArray(field.value) ? field.value.join(", ") : (field.value || "Not provided");
     row.append(label, value);
     list.appendChild(row);
   });

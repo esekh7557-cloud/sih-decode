@@ -1,7 +1,8 @@
 """Official-source live guidance for government services and schemes.
 
-Searches are deliberately limited to recognised government domains. The
-citizen profile is never included in an external search request.
+Searches are deliberately limited to recognised government domains. Search
+queries may include broad eligibility facts, but never identity or contact
+details such as a name, phone number, Aadhaar, or address.
 """
 from __future__ import annotations
 
@@ -40,15 +41,33 @@ def _is_official_url(url: str) -> bool:
     return host in _OFFICIAL_HOSTS or host == "gov.in" or host.endswith(".gov.in")
 
 
-def _safe_query(message: str, state: str) -> str:
+def _safe_query(message: str, state: str, profile: dict | None = None) -> str:
     """Remove obvious identifier patterns before sending a query externally."""
     sanitized = re.sub(r"\b\d{10,16}\b", "[redacted]", message)
     sanitized = re.sub(r"\s+", " ", sanitized).strip()
     location = f"{state.strip()} " if state and state.strip().lower() != "other" else ""
-    return f"{location}{sanitized} official government application"
+    profile_terms = []
+    profile = profile or {}
+    if profile.get("age") not in (None, ""):
+        profile_terms.append(f"age {profile['age']}")
+    for key in ("gender", "occupation", "caste_category"):
+        value = str(profile.get(key) or "").strip()
+        if value and value.lower() not in {"other", "unknown"}:
+            profile_terms.append(value.replace("_", " "))
+    income = profile.get("annual_income")
+    if income not in (None, ""):
+        try:
+            amount = float(income)
+            profile_terms.append(
+                "low income" if amount <= 250000 else
+                "middle income" if amount <= 800000 else "higher income"
+            )
+        except (TypeError, ValueError):
+            pass
+    return " ".join([location, *profile_terms, sanitized, "official government application"]).strip()
 
 
-async def get_live_guidance(message: str, state: str = "") -> dict:
+async def get_live_guidance(message: str, state: str = "", profile: dict | None = None) -> dict:
     """Search official portals and turn verified results into safe next steps."""
     api_key = os.getenv("SERPER_API_KEY", "").strip()
     if not api_key:
@@ -61,7 +80,7 @@ async def get_live_guidance(message: str, state: str = "") -> dict:
         }
 
     payload = {
-        "q": _safe_query(message, state),
+        "q": _safe_query(message, state, profile),
         "gl": "in",
         "hl": "en",
         "num": 10,

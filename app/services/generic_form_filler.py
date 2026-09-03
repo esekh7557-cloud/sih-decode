@@ -28,6 +28,29 @@ _UNFILLABLE_TYPES = {
 }
 
 
+def _is_masked_value(value: Any) -> bool:
+    """Return whether a display-only masked value must not be entered.
+
+    Application plans deliberately redact identity numbers before returning
+    them to the browser.  A filler must skip those redactions rather than
+    typing strings such as ``XXXX XXXX 1234`` into an official form.
+    """
+    if isinstance(value, (list, tuple, set)):
+        return any(_is_masked_value(item) for item in value)
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    compact = re.sub(r"[\s._-]+", "", text)
+    return bool(
+        re.match(r"^(?:x[\s._-]*){3,}", text, re.IGNORECASE)
+        or re.match(r"^[*•#]{3,}", text)
+        # Some older saved plans contain a mojibake bullet sequence.  Treat
+        # it as a mask too; it is never a meaningful answer for a portal.
+        or "â€¢" in text
+        or compact.casefold().startswith("xxxx")
+    )
+
+
 def _reviewed_fill_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return a minimal, safe copy of values already reviewed by the citizen.
 
@@ -52,6 +75,7 @@ def _reviewed_fill_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
             or value is None
             or field_type in _UNFILLABLE_TYPES
             or _SENSITIVE_FIELD.search(identity)
+            or _is_masked_value(value)
         ):
             continue
         reviewed.append({

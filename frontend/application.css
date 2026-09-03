@@ -43,7 +43,14 @@
 .application-step .official-portal-link { margin-top: 2px; }
 .application-step .application-detail-form { display: grid; gap: 9px; }
 .application-step .application-detail-form .field-group { display: grid; gap: 5px; color: #2d4266; font-size: 12px; font-weight: 750; }
-.application-step .application-detail-form input, .application-step .application-detail-form select { min-height: 38px; }
+.application-step .application-detail-form input, .application-step .application-detail-form select, .application-step .application-detail-form textarea { min-height: 38px; }
+.application-step .application-detail-form textarea { padding: 9px 10px; resize: vertical; }
+.question-choices { display: grid; gap: 7px; margin: 0; padding: 0; border: 0; }
+.question-choices legend { margin-bottom: 2px; color: #2d4266; font-size: 12px; font-weight: 750; }
+.question-choice { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 10px; color: #354c70; border: 1px solid #d7e3fa; border-radius: 8px; background: #fff; font-size: 12px; font-weight: 650; cursor: pointer; }
+.question-choice:has(input:checked) { color: #244aa0; border-color: #86a9ef; background: #edf4ff; }
+.question-choice input { min-height: auto !important; margin: 0; accent-color: var(--blue); }
+.question-choices-error .question-choice { border-color: #d78c81; }
 .application-documents ul { margin: 0; padding-left: 19px; }
 .application-documents .document-ready { color: #167466; }
 .application-documents .document-missing { color: #a55f16; }

@@ -65,3 +65,47 @@ def test_live_application_reuses_document_extracted_fields_before_asking():
         assert plan["missing_fields"] == ["college"]
     finally:
         store.wipe(session.id)
+
+
+def test_live_application_keeps_scanned_question_type_choices_and_constraints():
+    session = store.create()
+    try:
+        start_live_application(
+            session.id,
+            LiveApplicationIn(title="Official scholarship", url="https://myscheme.gov.in/example"),
+        )
+        session.discovered_forms[LIVE_APPLICATION_KEY] = {
+            "title": "Scholarship application",
+            "url": "https://myscheme.gov.in/example/form",
+            "fields": [
+                {
+                    "key": "study_mode",
+                    "label": "Study mode",
+                    "type": "radio",
+                    "required": True,
+                    "options": [
+                        {"value": "full_time", "label": "Full time"},
+                        {"value": "part_time", "label": "Part time"},
+                    ],
+                },
+                {
+                    "key": "completion_date",
+                    "label": "Course completion date",
+                    "type": "date",
+                    "required": True,
+                    "min": "2020-01-01",
+                    "max": "2030-12-31",
+                },
+            ],
+            "documents": [],
+        }
+
+        plan = live_application_readiness(session.id)
+        choice, date = plan["fields"]
+        assert choice["type"] == "radio"
+        assert choice["options"][0] == {"value": "full_time", "label": "Full time"}
+        assert date["type"] == "date"
+        assert date["min"] == "2020-01-01"
+        assert date["max"] == "2030-12-31"
+    finally:
+        store.wipe(session.id)
