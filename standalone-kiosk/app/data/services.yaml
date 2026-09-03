@@ -1,0 +1,50 @@
+# Document Requirements Database - source of truth for checklists,
+# fees, processing times and validity. Never fabricate requirements.
+
+CERT_INC:
+  name: Income Certificate
+  local_name: "आय प्रमाण पत्र"
+  category: certificates
+  fee: "Rs 15"
+  processing: "7-15 working days"
+  validity: "6 months"
+  portal: goa_online
+  documents:
+    - name: Voter Id card - Id proof
+    - name: Aadhaar Card
+    - name: Birth Certificate
+    - name: PAN card - Id proof
+    - name: Photograph
+    - name: Residence Certificate
+
+RESIDENCE:
+  name: Residence Certificate
+  local_name: "निवास प्रमाण पत्र"
+  category: certificates
+  fee: "Rs 15"
+  processing: "15-30 days"
+  validity: "Lifetime"
+  portal: goa_online
+  documents:
+    - name: Birth Certificate
+    - name: Aadhaar Card
+    - name: Photograph
+    - name: Residence Certificate or Bonafide Certificate(Latest)
+    - name: Self Declaration
+
+CASTE:
+  name: Caste Certificate
+  local_name: "जाति प्रमाण पत्र"
+  category: certificates
+  fee: "Rs 15"
+  processing: "15-30 days"
+  validity: "Lifetime"
+  portal: goa_online
+  documents:
+    - name: Birth Certificate
+    - name: Aadhaar Card
+    - name: Document showing that applicant/applicants family was residing in Goa prior to 19/02/1968
+    - name: Voter Id card - Id proof
+    - name: Income Certificate issued by the competent authority for preceding 3 years
+    - name: Photograph
+    - name: Self Declaration

@@ -63,7 +63,13 @@ Goa Online. To add another service, add it to `app/data/services.yaml` with:
 
 ## Quick start
 
-Windows PowerShell:
+After setup, run the project directly from the virtual environment:
+
+Windows PowerShell run command:
+
+    .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+Windows PowerShell setup:
 
     python3 -m venv .venv
     .\.venv\Scripts\Activate.ps1

@@ -8,7 +8,10 @@ Responses follow the kiosk action protocol:
 import os
 import re
 import shutil
+import socket
 import subprocess
+import sys
+import threading
 import time
 import importlib
 from pathlib import Path
@@ -28,8 +31,9 @@ if _env_path.exists():
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+import httpx
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Union, Any
 
@@ -100,12 +104,132 @@ app.mount("/scans", StaticFiles(directory=str(_SCANS_DIR)), name="scans")
 
 # --- Serve frontend ---
 _FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+_GUIDED_SERVICES_PROJECT = Path(__file__).resolve().parent.parent / "standalone-kiosk"
+_GUIDED_SERVICES_PORT = 8011
+_guided_services_process: subprocess.Popen | None = None
+_guided_services_start_lock = threading.Lock()
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
 
 @app.get("/", include_in_schema=False)
 def root():
     return FileResponse(str(_FRONTEND / "index.html"), headers=NO_CACHE)
+
+
+def _guided_services_backend_url(path: str, query: str = "") -> str:
+    suffix = f"?{query}" if query else ""
+    return f"http://127.0.0.1:{_GUIDED_SERVICES_PORT}{path}{suffix}"
+
+
+def _guided_services_backend_is_ready() -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", _GUIDED_SERVICES_PORT), timeout=0.15):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_guided_services_backend() -> None:
+    """Start the untouched standalone application in an isolated process."""
+    global _guided_services_process
+    if _guided_services_backend_is_ready():
+        return
+
+    with _guided_services_start_lock:
+        if _guided_services_backend_is_ready():
+            return
+        if not _GUIDED_SERVICES_PROJECT.is_dir():
+            raise HTTPException(500, "The standalone guided-services project is missing")
+
+        process_kwargs: dict[str, Any] = {
+            "cwd": str(_GUIDED_SERVICES_PROJECT),
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if os.name == "nt":
+            process_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        _guided_services_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(_GUIDED_SERVICES_PORT),
+            ],
+            **process_kwargs,
+        )
+        for _ in range(30):
+            if _guided_services_backend_is_ready():
+                return
+            if _guided_services_process.poll() is not None:
+                break
+            time.sleep(0.1)
+
+    raise HTTPException(502, "The standalone guided-services application could not start")
+
+
+async def _proxy_guided_services_request(request: Request, path: str | None = None):
+    _ensure_guided_services_backend()
+    target_path = path or request.url.path
+    forwarded_headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length", "connection"}
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
+            response = await client.request(
+                request.method,
+                _guided_services_backend_url(target_path, request.url.query),
+                content=await request.body(),
+                headers=forwarded_headers,
+            )
+    except httpx.HTTPError as error:
+        raise HTTPException(502, "The standalone guided-services application is unavailable") from error
+
+    response_headers = {
+        key: value
+        for key, value in response.headers.items()
+        if key.lower() not in {"connection", "content-encoding", "transfer-encoding"}
+    }
+    return Response(content=response.content, status_code=response.status_code, headers=response_headers)
+
+
+def _is_guided_services_request(request: Request) -> bool:
+    referrer_path = urlparse(request.headers.get("referer", "")).path.rstrip("/")
+    return referrer_path == "/guided-services"
+
+
+@app.middleware("http")
+async def proxy_guided_services_requests(request: Request, call_next):
+    if request.url.path != "/guided-services" and _is_guided_services_request(request):
+        return await _proxy_guided_services_request(request)
+    return await call_next(request)
+
+
+@app.on_event("shutdown")
+def stop_guided_services_backend() -> None:
+    global _guided_services_process
+    if _guided_services_process and _guided_services_process.poll() is None:
+        _guided_services_process.terminate()
+        try:
+            _guided_services_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _guided_services_process.kill()
+    _guided_services_process = None
+
+
+@app.get("/guided-services", include_in_schema=False)
+@app.get("/guided-services/", include_in_schema=False)
+async def guided_services_page(request: Request):
+    """Expose the supplied standalone frontend and backend under one main-app page."""
+    response = await _proxy_guided_services_request(request, path="/")
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
 
 
 @app.get("/pdf-filler", include_in_schema=False)

@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JanSeva AI — Digital Citizen Assistant Kiosk</title>
+  <meta name="description" content="Free public kiosk assistant for government offices. Get certificates and discover welfare schemes you qualify for — no middlemen needed." />
+  <link rel="stylesheet" href="/style.css?v=20260902" />
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="logo">🏛️</span>
+      <div>
+        <h1>JanSeva AI</h1>
+        <div class="subtitle">Digital Citizen Assistant Kiosk</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="badge badge-demo">Demo Mode</span>
+      <span>📍 Mamlatdar Office</span>
+    </div>
+  </header>
+
+  <!-- Tricolor Stripe -->
+  <div class="tricolor">
+    <span class="saffron"></span>
+    <span class="white"></span>
+    <span class="green"></span>
+  </div>
+
+  <!-- ===== Progress Bar ===== -->
+  <nav class="progress-bar">
+    <div class="steps">
+      <div class="step-item active">
+        <span class="step-num">1</span>
+        <span>Checklist</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-item">
+        <span class="step-num">2</span>
+        <span>Scan</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-item">
+        <span class="step-num">3</span>
+        <span>Form</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-item">
+        <span class="step-num">4</span>
+        <span>Done ✅</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===== Main Content ===== -->
+  <main class="main">
+
+    <!-- ─── STEP 0: SERVICE SELECTION ─── -->
+    <section class="panel active" id="panel-identify">
+      <div class="card glass-card">
+        <div class="card-title">Select a Service</div>
+        <div class="card-subtitle">आप कौन सा प्रमाणपत्र बनवाना चाहते हैं?</div>
+        
+        <div id="service-grid" class="service-grid">
+          <!-- Populated dynamically via JS -->
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 1: CHECKLIST ─── -->
+    <section class="panel" id="panel-checklist">
+      <div class="card">
+        <div class="card-title" id="cl-service">Document Checklist</div>
+        <div class="card-subtitle">ये दस्तावेज तैयार रखें / Keep these documents ready</div>
+
+        <div class="checklist-meta">
+          <div class="meta-chip">
+            <div class="label">Fee / शुल्क</div>
+            <div class="value" id="cl-fee">—</div>
+          </div>
+          <div class="meta-chip">
+            <div class="label">Processing</div>
+            <div class="value" id="cl-processing">—</div>
+          </div>
+          <div class="meta-chip">
+            <div class="label">Validity</div>
+            <div class="value" id="cl-validity">—</div>
+          </div>
+        </div>
+
+        <ul class="checklist-list" id="checklist-items">
+          <!-- Populated dynamically -->
+        </ul>
+
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="showPanel(0)">← Back</button>
+          <button class="btn btn-primary" onclick="confirmChecklist()">
+            ✅ I Have These Documents — Proceed
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 2: SCAN ─── -->
+    <section class="panel" id="panel-scan">
+      <div class="card">
+        <div class="card-title">📷 AI Document Extraction</div>
+        <div class="card-subtitle">दस्तावेज़ अपलोड करें या स्कैन करें / Upload document for instant AI extraction</div>
+
+        <div class="scan-area">
+          <div class="scan-dropzone" id="scan-dropzone" style="border: 2px dashed var(--primary); border-radius: 12px; padding: 28px 20px; background: #f8fafc; cursor: pointer; text-align: center; transition: all 0.2s ease;">
+            <div class="scan-icon" style="font-size: 40px; margin-bottom: 10px;">📤</div>
+            <div style="font-weight: 800; font-size: 18px; color: var(--primary); margin-bottom: 6px;">
+              Upload Document Image from Your Computer
+            </div>
+            <p style="color: var(--text-secondary); font-size: 14px; margin: 0 0 16px 0;">
+              Drag & Drop your image file here, or click the button below to browse
+            </p>
+            
+            <button type="button" class="btn btn-primary" onclick="document.getElementById('scan-file-input').click()" style="padding: 10px 24px; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;">
+              📁 Browse & Select Image File
+            </button>
+            <input type="file" id="scan-file-input" accept="image/png, image/jpeg, image/jpg, image/webp" multiple onchange="handleImageSelect(event)" style="display: none;" />
+            
+            <div style="margin-top: 12px; font-size: 12px; color: #64748b;">
+              Supported formats: JPG, PNG, WEBP (Aadhaar, PAN, Ration Card, etc.)
+            </div>
+          </div>
+
+          <div id="image-preview-area" style="display: none; margin: 18px auto; max-width: 520px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; padding: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <span style="font-size: 13px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 6px;">
+                ✅ Selected Document Image Ready:
+              </span>
+              <button type="button" onclick="clearSelectedImages()" style="background: none; border: none; color: #dc2626; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline;">
+                Remove / Pick Another
+              </button>
+            </div>
+            <div id="image-previews" style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; align-items: center;"></div>
+          </div>
+
+          <div class="form-group" style="text-align: left; max-width: 480px; margin: 15px auto 0 auto;">
+            <label for="scan-doc-type" style="font-weight: bold; margin-bottom: 5px;">Expected Document Type (Optional):</label>
+            <select id="scan-doc-type" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px;">
+              <option value="Aadhaar Card">Aadhaar Card / आधार कार्ड</option>
+              <option value="PAN Card">PAN Card / पैन कार्ड</option>
+              <option value="Ration Card">Ration Card / राशन कार्ड</option>
+              <option value="Income Certificate">Income Certificate / आय प्रमाण पत्र</option>
+              <option value="Domicile Certificate">Domicile / Residence Certificate</option>
+              <option value="Caste Certificate">Caste Certificate / जाति प्रमाण पत्र</option>
+              <option value="Other">Other Document / अन्य दस्तावेज़</option>
+            </select>
+          </div>
+          
+          <button class="btn btn-primary" id="scan-btn" onclick="performScan()" style="margin-top: 16px; padding: 14px 32px; font-size: 16px; font-weight: 800; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+            ⚡ Extract Information with AI
+          </button>
+
+          <!-- Conversational Extraction UI -->
+          <div id="chat-area" style="display: none; margin-top: 20px; text-align: left; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 16px;">
+            <div id="chat-question" style="font-size: 16px; font-weight: 600; color: #1e40af; margin-bottom: 12px;"></div>
+            <div style="display: flex; gap: 10px;">
+              <input type="text" id="chat-input" placeholder="Type your answer here..." style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border);" onkeypress="if(event.key === 'Enter') sendScanAnswer()">
+              <button class="btn btn-secondary" onclick="startDictation()" style="padding: 10px 15px; border-radius: 50%; font-size: 18px;" title="Speak Answer">🎤</button>
+              <button class="btn btn-primary" onclick="sendScanAnswer()" style="padding: 10px 20px;">Send</button>
+            </div>
+          </div>
+
+          <div class="scan-result" id="scan-confirm-area" style="display: none;">
+            <div class="extraction-header">
+              <div class="extraction-badge">✨ AI Extracted Information</div>
+              <div class="extraction-meta" id="extraction-meta">Model: openrouter/free</div>
+            </div>
+            <div id="scan-fields" class="extracted-grid"></div>
+
+            <div class="btn-group" style="margin-top: 20px;">
+              <button class="btn btn-secondary" onclick="performScan()">🔄 Re-extract</button>
+              <button class="btn btn-success" onclick="confirmScan()">
+                ✅ Auto-Fill Form & Continue ➔
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 3: FILL — Profile Form ─── -->
+    <section class="panel" id="panel-fill">
+      <div class="card">
+        <div class="card-title">📝 Your Details</div>
+        <div class="card-subtitle">अपनी जानकारी भरें / Fill in your details</div>
+
+        <form id="fill-form" onsubmit="event.preventDefault(); submitProfile();">
+          <div class="form-grid">
+
+            <div class="form-group">
+              <label for="f-name">Name / नाम</label>
+              <input id="f-name" type="text" placeholder="Enter full name" />
+            </div>
+            <div class="form-group">
+              <label for="f-father_name">Father's Name / पिता का नाम</label>
+              <input id="f-father_name" type="text" placeholder="Father's name" />
+            </div>
+            <div class="form-group">
+              <label for="f-dob">Date of Birth / जन्म तिथि</label>
+              <input id="f-dob" type="text" placeholder="DD/MM/YYYY" />
+            </div>
+            <div class="form-group">
+              <label for="f-age">Age / उम्र</label>
+              <input id="f-age" type="number" placeholder="e.g. 35" />
+            </div>
+            <div class="form-group">
+              <label for="f-gender">Gender / लिंग</label>
+              <select id="f-gender">
+                <option value="">— Select —</option>
+                <option value="male">Male / पुरुष</option>
+                <option value="female">Female / महिला</option>
+                <option value="other">Other / अन्य</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-mobile">Mobile / मोबाइल</label>
+              <input id="f-mobile" type="tel" placeholder="10-digit number" />
+            </div>
+            <div class="form-group full-width">
+              <label for="f-address">Address / पता</label>
+              <input id="f-address" type="text" placeholder="Full address" />
+            </div>
+            <div class="form-group">
+              <label for="f-village">Village / गाँव</label>
+              <input id="f-village" type="text" placeholder="Village name" />
+            </div>
+            <div class="form-group">
+              <label for="f-taluka">Taluka / तालुका</label>
+              <input id="f-taluka" type="text" placeholder="Taluka" />
+            </div>
+            <div class="form-group">
+              <label for="f-district">District / जिला</label>
+              <input id="f-district" type="text" placeholder="District" />
+            </div>
+            <div class="form-group">
+              <label for="f-state">State / राज्य</label>
+              <input id="f-state" type="text" value="Maharashtra" />
+            </div>
+            <div class="form-group">
+              <label for="f-residence_area">Area / क्षेत्र</label>
+              <select id="f-residence_area">
+                <option value="rural">Rural / ग्रामीण</option>
+                <option value="urban">Urban / शहरी</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-occupation">Occupation / व्यवसाय</label>
+              <select id="f-occupation">
+                <option value="">— Select —</option>
+                <option value="farmer">Farmer / किसान</option>
+                <option value="salaried">Salaried / नौकरीपेशा</option>
+                <option value="artisan">Artisan / कारीगर</option>
+                <option value="small_business">Small Business / छोटा व्यापार</option>
+                <option value="unemployed">Unemployed / बेरोज़गार</option>
+                <option value="pensioner">Pensioner / पेंशनभोगी</option>
+                <option value="student">Student / विद्यार्थी</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-employment_sector">Employment Sector</label>
+              <select id="f-employment_sector">
+                <option value="">— Select —</option>
+                <option value="organized">Organized / संगठित</option>
+                <option value="unorganized">Unorganized / असंगठित</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-annual_income">Annual Income / वार्षिक आय (₹)</label>
+              <input id="f-annual_income" type="number" placeholder="e.g. 150000" />
+            </div>
+            <div class="form-group">
+              <label for="f-caste_category">Caste Category / जाति वर्ग</label>
+              <select id="f-caste_category">
+                <option value="">— Select —</option>
+                <option value="GENERAL">General / सामान्य</option>
+                <option value="SC">SC</option>
+                <option value="ST">ST</option>
+                <option value="OBC">OBC</option>
+                <option value="NT">NT</option>
+                <option value="VJNT">VJNT</option>
+                <option value="SBC">SBC</option>
+                <option value="MINORITY">Minority / अल्पसंख्यक</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-family_size">Family Size / परिवार का आकार</label>
+              <input id="f-family_size" type="number" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group">
+              <label for="f-land_acres">Land (Acres) / ज़मीन</label>
+              <input id="f-land_acres" type="number" step="0.1" placeholder="e.g. 2.5" />
+            </div>
+            <div class="form-group">
+              <label for="f-house_type">House Type / मकान</label>
+              <select id="f-house_type">
+                <option value="">— Select —</option>
+                <option value="pucca">Pucca / पक्का</option>
+                <option value="kutcha">Kutcha / कच्चा</option>
+                <option value="homeless">Homeless / बेघर</option>
+              </select>
+            </div>
+            
+            <!-- --- GOA SPECIFIC FIELDS --- -->
+            <div class="form-group full-width" style="margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">
+              <strong style="color: var(--primary);">Goa Portal Specific Details</strong>
+            </div>
+            <div class="form-group">
+              <label for="f-applying_for">Applying For</label>
+              <select id="f-applying_for">
+                <option value="">— Select —</option>
+                <option value="Self">Self</option>
+                <option value="Minor">Minor</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-purpose">Purpose</label>
+              <input id="f-purpose" type="text" placeholder="e.g. Mediclaim" />
+            </div>
+            <div class="form-group">
+              <label for="f-residence_period">Residence Period (Years)</label>
+              <input id="f-residence_period" type="number" placeholder="e.g. 15" />
+            </div>
+            <div class="form-group">
+              <label for="f-title">Title</label>
+              <select id="f-title">
+                <option value="">— Select —</option>
+                <option value="Mr.">Mr.</option>
+                <option value="Mrs.">Mrs.</option>
+                <option value="Ms.">Ms.</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-place_of_birth">Place of Birth</label>
+              <input id="f-place_of_birth" type="text" placeholder="City/Village" />
+            </div>
+            <div class="form-group">
+              <label for="f-marital_status">Marital Status</label>
+              <select id="f-marital_status">
+                <option value="">— Select —</option>
+                <option value="Unmarried">Unmarried</option>
+                <option value="Married">Married</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-guardian_relation">Guardian Relation</label>
+              <select id="f-guardian_relation">
+                <option value="">— Select —</option>
+                <option value="Father">Father</option>
+                <option value="Husband">Husband</option>
+                <option value="Wife">Wife</option>
+                <option value="Guardian">Guardian</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-email">Email ID</label>
+              <input id="f-email" type="email" placeholder="example@email.com" />
+            </div>
+            <div class="form-group">
+              <label for="f-locality">Locality / Ward</label>
+              <input id="f-locality" type="text" placeholder="e.g. Market Area" />
+            </div>
+            <div class="form-group">
+              <label for="f-pincode">Pincode</label>
+              <input id="f-pincode" type="text" placeholder="e.g. 403001" />
+            </div>
+            <div class="form-group">
+              <label for="f-earning_members">Earning Members</label>
+              <input id="f-earning_members" type="number" placeholder="e.g. 1" />
+            </div>
+            <div class="form-group">
+              <label for="f-children_count">Children Count</label>
+              <input id="f-children_count" type="number" placeholder="e.g. 2" />
+            </div>
+            <div class="form-group">
+              <label for="f-previous_certificate">Previous Certificate Issued?</label>
+              <select id="f-previous_certificate">
+                <option value="">— Select —</option>
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-immovable_property">Any Immovable Property?</label>
+              <select id="f-immovable_property">
+                <option value="">— Select —</option>
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-property_value">Property Value</label>
+              <input id="f-property_value" type="text" placeholder="e.g. 0" />
+            </div>
+            <div class="form-group">
+              <label for="f-other_income">Other Income</label>
+              <input id="f-other_income" type="text" placeholder="e.g. 0" />
+            </div>
+            <div class="form-group">
+              <label for="f-electoral_year">Electoral Roll Year</label>
+              <input id="f-electoral_year" type="text" placeholder="e.g. 2023" />
+            </div>
+            <div class="form-group">
+              <label for="f-part_no">Electoral Part No</label>
+              <input id="f-part_no" type="text" placeholder="e.g. 12" />
+            </div>
+            <div class="form-group">
+              <label for="f-serial_no">Electoral Serial No</label>
+              <input id="f-serial_no" type="text" placeholder="e.g. 345" />
+            </div>
+            <div class="form-group">
+              <label for="f-constituency">Constituency</label>
+              <input id="f-constituency" type="text" placeholder="e.g. Panaji" />
+            </div>
+            <div class="form-group">
+              <label for="f-ration_card">Ration Card No</label>
+              <input id="f-ration_card" type="text" placeholder="e.g. RC1234567" />
+            </div>
+            <div class="form-group">
+              <label for="f-property_details">Property Details</label>
+              <input id="f-property_details" type="text" placeholder="e.g. None" />
+            </div>
+            <div class="form-group">
+              <label for="f-id_proof_type">ID Proof Type</label>
+              <select id="f-id_proof_type">
+                <option value="">— Select —</option>
+                <option value="Aadhar Card">Aadhaar Card</option>
+                <option value="PAN Card">PAN Card</option>
+                <option value="Voter ID">Voter ID</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-id_proof_no">ID Proof No</label>
+              <input id="f-id_proof_no" type="text" placeholder="e.g. 1234..." />
+            </div>
+            <div class="form-group">
+              <label for="f-certify">I Hereby Certify</label>
+              <select id="f-certify">
+                <option value="">— Select —</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <!-- ----------------------------- -->
+          </div>
+
+          <!-- Toggles -->
+          <div style="margin-top: 20px;">
+            <label style="font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">
+              Additional Details / अतिरिक्त जानकारी
+            </label>
+            <div class="toggle-grid">
+              <div class="toggle-item">
+                <input type="checkbox" id="f-is_bpl" />
+                <label for="f-is_bpl">BPL Card Holder</label>
+              </div>
+              <div class="toggle-item">
+                <input type="checkbox" id="f-has_lpg_connection" checked />
+                <label for="f-has_lpg_connection">Has LPG Connection</label>
+              </div>
+              <div class="toggle-item">
+                <input type="checkbox" id="f-is_student" />
+                <label for="f-is_student">Student / विद्यार्थी</label>
+              </div>
+              <div class="toggle-item">
+                <input type="checkbox" id="f-is_entrepreneur" />
+                <label for="f-is_entrepreneur">Entrepreneur / उद्यमी</label>
+              </div>
+              <div class="toggle-item">
+                <input type="checkbox" id="f-is_pregnant" />
+                <label for="f-is_pregnant">Pregnant / गर्भवती</label>
+              </div>
+              <div class="toggle-item">
+                <input type="checkbox" id="f-is_first_child" />
+                <label for="f-is_first_child">First Child / पहला बच्चा</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-group" style="margin-top: 28px;">
+            <button type="button" class="btn btn-secondary" onclick="showPanel(1)">← Back</button>
+            <button type="submit" class="btn btn-primary" id="submit-profile-btn">
+              🔍 Check Eligibility & Find Schemes
+            </button>
+          </div>
+        </form>
+
+        <!-- Scheme Results -->
+        <div class="schemes-results" id="scheme-results"></div>
+
+        <!-- Confirm & Generate -->
+        <div id="fill-confirm-area" style="display: none;">
+          <div class="btn-group" style="margin-top: 24px;">
+            <button class="btn btn-success" id="deliver-btn" onclick="confirmAndDeliver()">
+              ✅ Confirm & Generate Documents
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 4: DELIVER ─── -->
+    <section class="panel" id="panel-deliver">
+      <div class="card">
+        <div class="deliver-hero">
+          <div class="check-icon">✅</div>
+          <h3>आपका काम हो गया! / Your work is done!</h3>
+          <p>प्रिंटर से कागज़ात ले लीजिए। / Please collect your papers from the printer.</p>
+
+          <div class="download-grid" id="download-grid">
+            <!-- Populated dynamically -->
+          </div>
+
+          <div id="qr-section" style="display: none; margin-top: 24px;">
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+              Scan QR to download on your phone:
+            </p>
+            <img id="qr-image" alt="Download QR Code" style="width: 150px; height: 150px; border-radius: 8px;" />
+          </div>
+
+          <div id="autofill-section" style="margin-top: 28px; text-align: left; background: #f8fafc; border: 2px solid #3b82f6; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="flex: 1;">
+                <h4 style="margin: 0; color: #1e293b; font-size: 16px;">🤖 Instant Government Portal Auto-Fill</h4>
+                <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">Step 1: Launch the browser and log in to Goa Online.</p>
+                <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">Step 2: After logging in, click Done to auto-fill your form!</p>
+              </div>
+              <div style="flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn btn-primary" onclick="launchBrowser()" id="btn-launch-browser" style="white-space: nowrap;">
+                  1. Launch Browser
+                </button>
+                <button class="btn btn-success" onclick="triggerAutoFill()" id="btn-trigger-fill" style="white-space: nowrap; display: none;">
+                  2. I'm Logged In - Fill It! ⚡
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- ─────────────────────────────────────────────── -->
+
+          <p id="printer-note" style="display: none; margin-top: 12px; font-size: 13px; color: var(--warning); font-weight: 600;"></p>
+
+          <div class="btn-group" style="margin-top: 32px; display: flex; flex-direction: column; gap: 10px;">
+            <button class="btn btn-success" onclick="startUploadAutomation()" id="upload-btn" style="width: 100%;">🚀 Automate Document Uploads</button>
+            <div style="display: flex; gap: 10px; width: 100%;">
+              <button class="btn btn-primary" onclick="startAnother()" style="flex: 1;">🔄 Another Task / और कोई काम</button>
+              <button class="btn btn-danger" onclick="endSession()" style="flex: 1;">🚪 Exit / बाहर जाएं</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 5: ADMIN AGENT ─── -->
+    <section class="panel" id="panel-admin">
+      <div class="card">
+        <div class="card-title">🤖 AI Form Assistant</div>
+        <div class="card-subtitle">Automate any online form securely</div>
+        
+        <!-- Step 1: Input URL -->
+        <div id="admin-step-url" class="active" style="text-align: left;">
+            <p style="font-weight: 600; margin-bottom: 10px;">Paste the link of the form you want me to fill out.</p>
+            <div style="display: flex; gap: 10px;">
+                <input type="url" id="admin-form-url" placeholder="https://goaonline.gov.in/App/..." required class="form-control" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border);" />
+                <button id="admin-btn-analyze" class="btn btn-primary" onclick="adminAnalyzeForm()">Analyze Form</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Loading State -->
+        <style>
+          @keyframes spin { to { transform: rotate(360deg); } }
+        </style>
+        <div id="admin-step-loading" style="display: none; padding: 40px 0; text-align: center;">
+            <div class="spinner" style="margin: 0 auto 20px; border: 4px solid rgba(0,0,0,0.1); border-left-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
+            <h3 id="admin-loading-text" style="color: var(--primary);">Analyzing the form...</h3>
+            <p style="color: var(--text-secondary);">My AI vision is reading the webpage to understand what is required.</p>
+        </div>
+
+        <!-- Step 3: Dynamic Data Collection -->
+        <div id="admin-step-collect" style="display: none; text-align: left;">
+            <h3 style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary);">Provide Information</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">I read the form! Please provide the following details so I can fill it for you.</p>
+            
+            <form id="admin-dynamic-form" onsubmit="event.preventDefault(); adminExecuteForm();">
+                <div id="admin-dynamic-fields" class="form-grid">
+                    <!-- Fields injected here via JS -->
+                </div>
+                
+                <h3 style="margin-top: 30px; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary);">Required Documents</h3>
+                <div id="admin-dynamic-docs" class="form-grid">
+                    <!-- Docs injected here via JS -->
+                </div>
+                
+                <div style="margin-top: 30px; display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="adminReset()">Cancel</button>
+                    <button type="submit" class="btn btn-success" style="flex: 2;" id="admin-submit-btn">Fill & Submit Form ➔</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Step 4: Success Result -->
+        <div id="admin-step-success" style="display: none; text-align: center; padding: 30px 0;">
+            <div style="font-size: 60px; margin-bottom: 10px;">✅</div>
+            <h3 style="color: var(--success); margin-bottom: 10px;">Form Submitted Successfully!</h3>
+            <p id="admin-success-message" style="margin-bottom: 20px; color: var(--text-secondary);">The agent has successfully navigated and filled out the form.</p>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+              <button class="btn btn-primary" onclick="adminReset()">Automate Another Form</button>
+              <button class="btn btn-secondary" onclick="showPanel(0)">Back to Home</button>
+            </div>
+        </div>
+        
+        <!-- Step 5: Error Result -->
+        <div id="admin-step-error" style="display: none; text-align: center; padding: 30px 0;">
+            <div style="font-size: 60px; margin-bottom: 10px;">❌</div>
+            <h3 style="color: var(--danger); margin-bottom: 10px;">Something went wrong</h3>
+            <p id="admin-error-message" style="margin-bottom: 20px; color: var(--text-secondary);">An error occurred while communicating with the agent.</p>
+            <button class="btn btn-secondary" onclick="adminReset()">Try Again</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="tricolor" style="margin-bottom: 16px;">
+      <span class="saffron"></span>
+      <span class="white"></span>
+      <span class="green"></span>
+    </div>
+    <p>
+      🏛️ <strong>JanSeva AI</strong> — Free public service. No middlemen. No fees beyond government charges.
+      <br />
+      Privacy: All data is erased after your session ends. Zero personal data is stored.
+    </p>
+  </footer>
+
+  <button id="btn-read-aloud" onclick="toggleReadAloud()" title="Read Page Aloud" style="position: fixed; bottom: 30px; right: 30px; z-index: 1000; font-size: 28px; width: 65px; height: 65px; border-radius: 50%; box-shadow: 0 4px 15px rgba(0,0,0,0.3); background-color: var(--primary); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s;">
+    🔊
+  </button>
+
+  <!-- Admin Auth Modal -->
+  <div id="admin-auth-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div style="font-size: 40px; margin-bottom: 10px;">🔒</div>
+      <h3>Admin Login</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">Please enter your credentials to access the AI Agent.</p>
+      <div class="form-group" style="text-align: left; margin-bottom: 15px;">
+        <label>Username</label>
+        <input type="text" id="admin-username" placeholder="Enter username" class="form-control" />
+      </div>
+      <div class="form-group" style="text-align: left; margin-bottom: 20px;">
+        <label>Password</label>
+        <input type="password" id="admin-password" placeholder="Enter password" class="form-control" />
+      </div>
+      <div style="color: red; font-size: 13px; margin-bottom: 15px; display: none;" id="admin-auth-error">Incorrect username or password.</div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-secondary" style="flex: 1;" onclick="closeAdminAuth()">Cancel</button>
+        <button class="btn btn-primary" style="flex: 1;" onclick="submitAdminAuth()">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js?v=20260902"></script>
+</body>
+</html>
