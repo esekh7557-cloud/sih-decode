@@ -27,14 +27,8 @@ starts. It provides:
   session profile, and refreshes the scholarship matches.
 - Explainable scheme cards with eligibility reason, benefit, and application
   route.
-- A dedicated **PDF Form Filler** page at `/pdf-filler` that detects fillable
-  AcroForm fields, suggests values from the saved profile, lets the citizen
-  review them, and downloads a completed copy.
 - Certificate service checklists with documents, fee, processing time, and
   validity.
-- A configuration-driven, multi-page **Apply with Saarthi** journey: official
-  portal login, required documents, missing details, reviewed autofill, and
-  citizen-controlled upload/payment/submission each have a separate page.
 - Voice input and spoken assistant replies in supported browsers. The citizen
   presses **Finish speaking** before a voice request is sent.
 - An end-session control that removes tracked session data.
@@ -52,41 +46,20 @@ starts. It provides:
    unambiguous follow-up answers to the same in-memory session.
 6. Once a request has the details needed for a useful match, live guidance can
    search recognised official government domains using broad eligibility facts
-   (never name, phone, Aadhaar, or address), then show the official source and
-   **Apply with Saarthi** handoff.
+   (never name, phone, Aadhaar, or address), then show the official source.
 
-### Applying with Saarthi
+Browser portal form scanning, autofill, and document-upload automation have
+been retired. Saarthi provides official links and checklists; the citizen
+completes the portal form and uploads directly on that official site.
 
-For a supported service:
+The browser application preparation workflow has been removed. Use the official
+portal links and service checklists to complete forms and upload documents
+directly on the government website.
 
 1. Ask for a named service (for example, “I need a residence certificate”) or
-   select it in Services.
-2. Select **Apply with Saarthi** to open the dedicated portal-login page.
-3. Open the official portal, log in, complete any OTP/CAPTCHA, and open the
-   correct application page yourself.
-4. Confirm that you are logged in. Saarthi reads the visible field labels,
-   required markers, dropdown choices, and upload-row labels from the local
-   browser and moves to a separate required-documents page.
-5. Upload and label the requested documents. Saarthi extracts their usable
-   details, fills matching application fields, and moves to a separate page
-   that asks for each remaining answer one at a time.
-6. Review the masked application summary and explicitly ask Saarthi to fill
-   the opened form when that service has a verified mapping. It stops before
-   **Save & Proceed**.
-7. On the final page, review the official form, start document upload, verify
-   the files, complete any payment, and submit the application yourself.
-
 The current catalog connects Income, Residence, and Caste Certificates for
 Goa Online. To add another service, add it to `app/data/services.yaml` with:
 
-- its `documents`, fee, processing time, and `portal` or `portal_url`;
-- optional `application_fields` for the answers Saarthi should collect; and
-- an `automation_mapping` whose verified mapping file is in
-  `app/docgen/mappings/` if portal form filling is safe to enable.
-
-Without a verified mapping, Saarthi still prepares the checklist, saves
-service-specific answers for the session, and opens the official site, but
-leaves form entry manual.
 
 ## Quick start
 
@@ -137,14 +110,6 @@ Vision implementation.
 | POST | /sessions/{id}/assistant | Ask for scheme or certificate guidance |
 | POST | /sessions/{id}/scan | Extract data from uploaded document images |
 | POST | /sessions/{id}/service | Retrieve a service checklist |
-| GET | /sessions/{id}/applications/{service_id}/readiness | Get a reviewed service application plan |
-| POST | /sessions/{id}/applications/{service_id}/details | Save service-specific application answers |
-| POST | /sessions/{id}/applications/{service_id}/scan-open-form | Scan the logged-in form's visible requirements |
-| POST | /sessions/{id}/launch_browser | Open the official portal for citizen login |
-| POST | /sessions/{id}/automate_fill | Fill reviewed fields; stops before Save & Proceed |
-| POST | /sessions/{id}/automate_upload | Upload scanned documents after portal-form review |
-| POST | /sessions/{id}/pdf-filler/inspect | Read fields from an uploaded fillable PDF |
-| POST | /sessions/{id}/pdf-filler/fill | Create a reviewed, filled PDF for download |
 | DELETE | /sessions/{id} | End the session and wipe tracked artifacts |
 
 ## Current scope and safety
@@ -154,14 +119,11 @@ Vision implementation.
 - The eligibility engine includes central schemes and Maharashtra-specific
   rules. State-specific catalogs and rule sets can be added incrementally.
 - Final government applications, OTPs, CAPTCHAs, and eligibility decisions
-  must be verified by a human authority.
-- Saarthi does not submit an application automatically. Auto-fill is enabled
-  only for services with a verified portal mapping; all others remain guided,
-  human-entered applications.
+  must be completed and verified by a human authority on the official portal.
 - The development server has permissive CORS and should not be exposed to the
   public internet without deployment hardening.
-- Scans are stored only in the current session's local `scans/` folder for the
-  document-upload step; review retention and access controls before production.
+- Scans are stored only in the current session's local `scans/` folder; review
+  retention and access controls before production.
 
 ## Tests
 

@@ -17,6 +17,23 @@ def _key(value: str, fallback: str) -> str:
     return key[:80] or fallback
 
 
+def _portal_error_message(data: Any) -> str | None:
+    """Return an actionable message when Goa Online shows its error page."""
+    if not isinstance(data, dict):
+        return None
+    text = " ".join(str(data.get(name) or "") for name in ("title", "text"))
+    if not re.search(r"could not process your request|some error", text, re.IGNORECASE):
+        return None
+    match = re.search(r"registration\s*id\s*:\s*([0-9]+)", text, re.IGNORECASE)
+    registration = f" (registration ID {match.group(1)})" if match else ""
+    return (
+        "The official Goa Online portal returned an error page"
+        f"{registration}. Its previous form session is no longer usable. "
+        "Open the official portal again, log in, navigate to the application "
+        "form, and scan it again before filling."
+    )
+
+
 def scan_open_form(port: int = 9222) -> dict[str, Any]:
     try:
         data = evaluate_open_form(
@@ -174,12 +191,22 @@ def scan_open_form(port: int = 9222) -> dict[str, Any]:
             if (first.length > 2) documents.add(first);
           }
         });
-        return { fields, documents: Array.from(documents).slice(0, 40), url: location.href, title: document.title };
+        return {
+          fields,
+          documents: Array.from(documents).slice(0, 40),
+          url: location.href,
+          title: document.title,
+          text: document.body ? document.body.innerText.slice(0, 2000) : ''
+        };
         })()""",
         port,
         )
     except ChromeDebugError as exc:
         raise RuntimeError(str(exc)) from exc
+
+    portal_error = _portal_error_message(data)
+    if portal_error:
+        raise RuntimeError(portal_error)
 
     fields, used_keys = [], set()
     grouped_controls = {}

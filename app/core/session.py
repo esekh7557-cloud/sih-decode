@@ -55,8 +55,6 @@ class Session:
         # it still needs to answer that intent. Values are merged into the
         # normal profile only after the citizen sends a follow-up answer.
         self.assistant_context: Dict[str, Any] = {}
-        self.pdf_form_path: Optional[str] = None
-        self.pdf_form_fields: list[Dict[str, Any]] = []
         self.created_at = time.time()
         self.last_active = time.time()
         self.completed = False

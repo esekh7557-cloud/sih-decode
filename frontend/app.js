@@ -715,21 +715,6 @@ function renderSchemes(schemes) {
       detail.append(caption, text);
       card.appendChild(detail);
     });
-    const apply = document.createElement("button");
-    apply.type = "button";
-    apply.className = "primary-button scheme-apply-button";
-    apply.textContent = "Apply with Saarthi";
-    apply.addEventListener("click", async () => {
-      $("#assistant").scrollIntoView({ behavior: "smooth", block: "start" });
-      apply.disabled = true;
-      apply.textContent = "Preparing application...";
-      const result = await askAssistant("I want to apply for " + scheme.scheme_name + " with Saarthi.", { autoApply: true });
-      if (result) {
-        apply.disabled = false;
-        apply.textContent = "Apply with Saarthi";
-      }
-    });
-    card.appendChild(apply);
     grid.appendChild(card);
   });
 }
@@ -780,14 +765,6 @@ function renderLiveGuidance(guidance, applicationServiceId = null) {
     actions.appendChild(open);
   }
 
-  if (applicationServiceId || primarySource) {
-    const prepare = document.createElement("button");
-    prepare.type = "button";
-    prepare.className = "primary-button";
-    prepare.textContent = "Apply with Saarthi";
-    prepare.addEventListener("click", () => startLiveGuidedApplication(applicationServiceId, primarySource));
-    actions.appendChild(prepare);
-  }
 }
 
 async function saveProfile({ quiet = false } = {}) {
@@ -850,24 +827,6 @@ async function selectService(serviceId) {
       list.appendChild(entry);
     });
     checklist.append(title, meta, list);
-    if (serviceId) {
-      const official = document.createElement("a");
-      official.className = "official-portal-link";
-      official.href = "#";
-      official.target = "_blank";
-      official.rel = "noopener noreferrer";
-      official.textContent = "Prepare application with Saarthi";
-      official.addEventListener("click", (event) => {
-        event.preventDefault();
-        openSaarthiApplication(serviceId);
-      });
-      const apply = document.createElement("button");
-      apply.type = "button";
-      apply.className = "primary-button saarthi-apply-button";
-      apply.textContent = "Apply with Saarthi";
-      apply.addEventListener("click", () => openSaarthiApplication(serviceId));
-      checklist.append(official, apply);
-    }
     addMessage("assistant", "I have prepared the checklist for " + summary.service + ". You can review it in the Services panel.");
   } catch (error) {
     showToast(error.message, "error");
@@ -925,8 +884,9 @@ function renderApplicationReview(container, plan, portalOpened) {
     fill.textContent = "Filling the official form...";
     try {
       const result = await api("/sessions/" + sessionId + "/automate_fill", "POST", { service_id: plan.service_id });
-      showToast(result.message, "success");
-      renderDocumentUploadStep(container, plan);
+      fill.textContent = "Fields filled — review in Chrome";
+      showToast(result.message || "Fields filled. Saarthi did not save or continue the official form.", "success");
+      renderPostFillReview(container, plan, result.message);
     } catch (error) {
       fill.disabled = false;
       fill.textContent = "Fill the reviewed form";
@@ -993,7 +953,11 @@ function setApplicationDocumentRequirements(plan) {
 
   request.hidden = requiredApplicationDocuments.length === 0;
   list.innerHTML = "";
-  if (!requiredApplicationDocuments.length) return;
+  if (!requiredApplicationDocuments.length) {
+    renderDocuments();
+    setDocumentPreparationVisibility(!(plan.form_scanned && plan.document_uploads_detected === false));
+    return;
+  }
 
   title.textContent = "Documents requested for " + (plan.service || "your application");
   requiredApplicationDocuments.forEach((documentName) => {
@@ -1002,6 +966,44 @@ function setApplicationDocumentRequirements(plan) {
     list.appendChild(item);
   });
   renderDocuments();
+  setDocumentPreparationVisibility(!(plan.form_scanned && plan.document_uploads_detected === false));
+}
+
+function renderPostFillReview(container, plan, message = "") {
+  if (container.querySelector(".post-fill-review")) return;
+  const step = document.createElement("section");
+  step.className = "post-fill-review application-review";
+  const heading = document.createElement("h4");
+  heading.textContent = "Review the filled official form";
+  const copy = document.createElement("p");
+  copy.textContent = message || "Saarthi filled only the reviewed fields. It did not click Save, Continue, Proceed, Upload, or Submit.";
+  step.append(heading, copy);
+  if (!(plan.form_scanned && plan.document_uploads_detected === false)) {
+    const documents = document.createElement("button");
+    documents.type = "button";
+    documents.className = "secondary-button full-width";
+    documents.textContent = "I reviewed the portal form — manage documents";
+    documents.addEventListener("click", () => renderDocumentUploadStep(container, plan));
+    step.appendChild(documents);
+  }
+  container.appendChild(step);
+}
+
+function setDocumentPreparationVisibility(visible) {
+  const root = $("#documents");
+  if (!root) return;
+  [
+    root.querySelector(".upload-zone"),
+    root.querySelector("#document-input"),
+    root.querySelector("#document-list"),
+    root.querySelector("#scan-documents-button"),
+  ].forEach((node) => {
+    if (node) node.hidden = !visible;
+  });
+}
+
+function documentDecisionKey(plan) {
+  return "janseva.application.documents-needed." + (plan.service_id || "application");
 }
 
 function restoreApplicationNode(node, parent, nextSibling) {
@@ -1115,12 +1117,13 @@ function renderSaarthiApplication(plan) {
   const documents = document.createElement("section");
   documents.className = "application-documents";
   const docTitle = document.createElement("h4");
-  docTitle.textContent = "1. Required documents";
+  const noPortalUpload = Boolean(plan.form_scanned && plan.document_uploads_detected === false);
+  docTitle.textContent = noPortalUpload ? "1. Supporting documents" : "1. Required documents";
   const docList = document.createElement("ul");
   const knownTypes = Array.from(new Set(
     (plan.uploaded_document_types || []).concat(selectedFiles.map((item) => item.documentType)).filter(Boolean)
   ));
-  plan.documents.forEach((documentName) => {
+  (plan.documents || []).forEach((documentName) => {
     const item = document.createElement("li");
     const hasDocument = knownTypes.some((type) => documentMatchesRequirement(type, documentName));
     item.className = hasDocument ? "document-ready" : "document-missing";
@@ -1137,7 +1140,46 @@ function renderSaarthiApplication(plan) {
     $("#documents").scrollIntoView({ behavior: "smooth", block: "start" });
     showToast("Add the listed documents, select their type, then choose Extract labelled documents.", "info");
   });
-  documents.append(docTitle, docList, docNote, collect);
+  if (noPortalUpload) {
+    const decision = document.createElement("section");
+    decision.className = "document-upload-decision";
+    const question = document.createElement("p");
+    question.textContent = "The scanned form has no document-upload field. Do you still need to prepare supporting documents?";
+    const actions = document.createElement("div");
+    actions.className = "button-row";
+    const yes = document.createElement("button");
+    yes.type = "button";
+    yes.className = "secondary-button";
+    yes.textContent = "Yes, prepare documents";
+    const no = document.createElement("button");
+    no.type = "button";
+    no.className = "secondary-button";
+    no.textContent = "No documents needed";
+    const setDecision = (needed) => {
+      sessionStorage.setItem(documentDecisionKey(plan), needed ? "yes" : "no");
+      collect.hidden = !needed;
+      setDocumentPreparationVisibility(needed);
+      docNote.textContent = needed
+        ? "Prepare these supporting documents for your records or any manual upload the authority requests."
+        : "No document preparation selected. Continue with the remaining application details.";
+      yes.disabled = needed;
+      no.disabled = !needed;
+    };
+    yes.addEventListener("click", () => setDecision(true));
+    no.addEventListener("click", () => setDecision(false));
+    actions.append(yes, no);
+    decision.append(question, actions);
+    documents.append(docTitle, docList, decision, docNote, collect);
+    const saved = sessionStorage.getItem(documentDecisionKey(plan));
+    if (saved === "yes") setDecision(true);
+    else if (saved === "no") setDecision(false);
+    else {
+      collect.hidden = true;
+      setDocumentPreparationVisibility(false);
+    }
+  } else {
+    documents.append(docTitle, docList, docNote, collect);
+  }
   flow.appendChild(documents);
 
   const details = document.createElement("section");
@@ -1347,8 +1389,9 @@ function renderLiveApplicationReview(flow, plan) {
     fill.textContent = "Filling the official form...";
     try {
       const result = await api("/sessions/" + sessionId + "/live-application/automate-fill", "POST");
-      showToast(result.message, "success");
-      renderDocumentUploadStep(flow, plan);
+      fill.textContent = "Fields filled — review in Chrome";
+      showToast(result.message || "Fields filled. Saarthi did not save or continue the official form.", "success");
+      renderPostFillReview(flow, plan, result.message);
     } catch (error) {
       fill.disabled = false;
       fill.textContent = "Fill the reviewed form";
@@ -1836,9 +1879,6 @@ async function askAssistant(message, { autoApply = false } = {}) {
     renderSchemes(result.recommendations || []);
     renderLiveGuidance(result.live_guidance, result.application_service_id);
     if (result.application_service_id && !result.live_guidance) await selectService(result.application_service_id);
-    if (autoApply && (result.application_service_id || (result.live_guidance && result.live_guidance.sources && result.live_guidance.sources.length))) {
-      await startLiveGuidedApplication(result.application_service_id, (result.live_guidance && result.live_guidance.sources || [])[0] || null);
-    }
     if (result.saved_profile_fields && result.saved_profile_fields.length) {
       showToast("Saved from chat: " + result.saved_profile_fields.join(", ") + ".", "success");
     }
@@ -1941,7 +1981,8 @@ async function endSession() {
     localStorage.setItem(VOICE_STORAGE_KEY, "false");
     $("#profile-form").reset();
     $("#chat-log").innerHTML = "";
-    $("#application-document-request").hidden = true;
+    const applicationDocumentRequest = $("#application-document-request");
+    if (applicationDocumentRequest) applicationDocumentRequest.hidden = true;
     renderDocuments();
     renderAdditionalDocumentData();
     renderSavedProfileData();
@@ -1990,7 +2031,6 @@ async function startSession() {
   updateReadiness();
   if (session.profile) resumeOnboarding(session.profile);
   else renderOnboardingStep();
-  await resumeApplicationRoute();
 }
 
 function bindEvents() {
@@ -2020,11 +2060,6 @@ function bindEvents() {
   $("#onboarding-next").addEventListener("click", () => advanceOnboarding().catch((error) => showToast(error.message, "error")));
   $("#onboarding-back").addEventListener("click", goBackOnboarding);
   $("#onboarding-end-session").addEventListener("click", endSession);
-  $("#application-page-back").addEventListener("click", returnToDashboard);
-  window.addEventListener("popstate", () => {
-    if (isApplicationPageRoute()) openApplicationPage();
-    else closeApplicationPage();
-  });
 }
 
 window.addEventListener("DOMContentLoaded", async () => {

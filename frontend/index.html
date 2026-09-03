@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JanSeva AI | Citizen Dashboard</title>
   <meta name="description" content="A multilingual citizen dashboard for documents, certificates, and government scheme guidance." />
-  <link rel="stylesheet" href="/style.css?v=dashboard-4" />
+  <link rel="stylesheet" href="/style.css?v=dashboard-7" />
 </head>
 <body>
   <div class="app-shell">
@@ -22,7 +22,6 @@
         <a class="active" href="#assistant">Assistant</a>
         <a href="#profile">My details</a>
         <a href="#documents">Documents</a>
-        <a href="/pdf-filler">PDF Form Filler</a>
         <a href="#schemes">Scheme matches</a>
         <a href="#services">Services</a>
       </nav>
@@ -259,11 +258,6 @@
             <div class="document-list" id="document-list">
               <p class="empty-documents">No documents added yet.</p>
             </div>
-            <section class="application-document-request" id="application-document-request" hidden aria-live="polite">
-              <strong id="application-document-title">Documents required for your application</strong>
-              <p>Upload and label each available document below. Saarthi will extract usable details, then ask for anything that is still missing.</p>
-              <ul id="application-document-requirements"></ul>
-            </section>
             <section class="additional-data" id="additional-data" hidden>
               <strong>Additional information found</strong>
               <p>Saved for this session only. Review it before using it in an application.</p>
@@ -290,18 +284,6 @@
             <div class="service-checklist" id="service-checklist" hidden></div>
           </section>
         </div>
-      </section>
-
-      <section class="application-page" id="application-page" hidden aria-labelledby="application-page-title">
-        <div class="application-page-header">
-          <div>
-            <p class="eyebrow">SAARTHI APPLICATION PREPARATION</p>
-            <h2 id="application-page-title">Prepare your official application</h2>
-            <p class="muted">Saarthi collects and reviews your information before it fills the official portal. You remain in control of login, payment, and final submission.</p>
-          </div>
-          <button class="secondary-button" id="application-page-back" type="button">Back to dashboard</button>
-        </div>
-        <div class="application-page-flow" id="application-page-flow"></div>
       </section>
 
       <section class="panel schemes-panel" id="schemes">
@@ -345,6 +327,6 @@
     </section>
   </div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
-  <script src="/app.js?v=dashboard-4"></script>
+  <script src="/app.js?v=dashboard-8"></script>
 </body>
 </html>

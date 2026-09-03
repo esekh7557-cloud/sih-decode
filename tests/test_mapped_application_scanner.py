@@ -85,3 +85,19 @@ def test_option_labels_match_a_mapped_radio_group_without_a_group_alias():
         ]
     finally:
         store.wipe(session.id)
+
+
+def test_scanned_no_upload_form_does_not_force_configured_documents():
+    session = store.create(sample=False)
+    try:
+        session.discovered_forms["CERT_INC"] = {
+            "title": "No-upload form",
+            "url": "https://services.goaonline.gov.in/example",
+            "documents": [],
+            "fields": [{"key": "name", "label": "Applicant name", "type": "text", "required": True}],
+        }
+        plan = application_readiness(session.id, "CERT_INC")
+        assert plan["documents"] == []
+        assert plan["document_uploads_detected"] is False
+    finally:
+        store.wipe(session.id)

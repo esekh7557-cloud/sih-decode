@@ -147,6 +147,7 @@ function renderRequirements(plan) {
       ? "The portal did not expose document rows. Confirm the latest requirements on the official page before applying."
       : "Saarthi will read the required document rows after you open the logged-in application form.";
     renderDocuments();
+    renderDocumentUploadDecision(plan);
     return;
   }
   instructions.textContent = plan.form_scanned
@@ -159,6 +160,61 @@ function renderRequirements(plan) {
     list.appendChild(item);
   });
   renderDocuments();
+  renderDocumentUploadDecision(plan);
+}
+
+function renderDocumentUploadDecision(plan) {
+  const panel = $("#application-documents-panel");
+  const instructions = $("#document-instructions");
+  const zone = panel && panel.querySelector(".upload-zone");
+  const list = $("#document-list");
+  const scan = $("#scan-documents-button");
+  if (!panel || !instructions || !zone || !list || !scan) return;
+  const unavailable = Boolean(plan.form_scanned && plan.document_uploads_detected === false);
+  const decisionKey = "janseva.application.documents-needed." + (plan.service_id || "application");
+  const old = panel.querySelector(".document-upload-decision");
+  if (old) old.remove();
+  if (!unavailable) {
+    [zone, list, scan].forEach((node) => { node.hidden = false; });
+    return;
+  }
+
+  const decision = document.createElement("section");
+  decision.className = "document-upload-decision application-step";
+  const title = document.createElement("h4");
+  title.textContent = "This form has no document-upload field";
+  const copy = document.createElement("p");
+  copy.textContent = "Do you still need to prepare supporting documents for this application?";
+  const actions = document.createElement("div");
+  actions.className = "button-row";
+  const yes = document.createElement("button");
+  yes.type = "button";
+  yes.className = "secondary-button";
+  yes.textContent = "Yes, prepare documents";
+  const no = document.createElement("button");
+  no.type = "button";
+  no.className = "secondary-button";
+  no.textContent = "No documents needed";
+  const setDecision = (needed) => {
+    sessionStorage.setItem(decisionKey, needed ? "yes" : "no");
+    [zone, list, scan].forEach((node) => { node.hidden = !needed; });
+    instructions.textContent = needed
+      ? "Prepare these supporting documents for your records or any manual upload the authority requests."
+      : "No document preparation was selected. Continue to the remaining application details.";
+    yes.disabled = needed;
+    no.disabled = !needed;
+  };
+  yes.addEventListener("click", () => setDecision(true));
+  no.addEventListener("click", () => setDecision(false));
+  actions.append(yes, no);
+  decision.append(title, copy, actions);
+  panel.insertBefore(decision, zone);
+  const saved = sessionStorage.getItem(decisionKey);
+  if (saved === "yes") setDecision(true);
+  else if (saved === "no") setDecision(false);
+  else {
+    [zone, list, scan].forEach((node) => { node.hidden = true; });
+  }
 }
 
 function renderDocuments() {
@@ -592,9 +648,24 @@ function renderReviewStep(flow, plan) {
         ? "/sessions/" + sessionId + "/live-application/automate-fill"
         : "/sessions/" + sessionId + "/automate_fill";
       const result = await api(path, "POST", plan.application_type === "live_guidance" ? null : { service_id: plan.service_id });
-      applicationStage = "upload";
-      sessionStorage.setItem(APPLICATION_STAGE_STORAGE_KEY, applicationStage);
-      await goToApplicationStep("submit", result.message || "The reviewed form is being filled. Review it in Chrome before uploading documents.");
+      fill.textContent = "Fields filled — review in Chrome";
+      const stopped = document.createElement("p");
+      stopped.className = "ready-message";
+      stopped.textContent = result.message || "The reviewed fields were filled. Saarthi did not click Save, Continue, Proceed, Upload, or Submit.";
+      review.appendChild(stopped);
+      if (!(plan.form_scanned && plan.document_uploads_detected === false)) {
+        const documents = document.createElement("button");
+        documents.type = "button";
+        documents.className = "secondary-button full-width";
+        documents.textContent = "I reviewed the filled portal form — manage documents";
+        documents.addEventListener("click", async () => {
+          applicationStage = "upload";
+          sessionStorage.setItem(APPLICATION_STAGE_STORAGE_KEY, applicationStage);
+          await goToApplicationStep("submit", "Form review confirmed. Document tools are ready when you need them.");
+        });
+        review.appendChild(documents);
+      }
+      showAlert("Fields filled. Saarthi stopped without saving or continuing the official form.", "success");
     } catch (error) {
       fill.disabled = false;
       fill.textContent = "Fill the reviewed form";
@@ -611,6 +682,12 @@ function renderUploadStep(flow, plan) {
   const title = document.createElement("h4");
   title.textContent = applicationStage === "submit" ? "Documents upload started" : "Review the form, then upload documents";
   const copy = document.createElement("p");
+  if (plan.form_scanned && plan.document_uploads_detected === false) {
+    copy.textContent = "The scanned official form has no document-upload field. Review the filled form and continue on the portal when ready.";
+    step.append(title, copy);
+    flow.appendChild(step);
+    return;
+  }
   copy.textContent = applicationStage === "submit"
     ? "Review the official portal while the scanned files are uploaded. Saarthi will not submit the application or handle payment."
     : "Review every value in the official portal first. When you are on its document-upload page, start the upload of the scanned documents.";

@@ -110,29 +110,27 @@ def root():
 
 @app.get("/pdf-filler", include_in_schema=False)
 def pdf_filler_page():
-    return FileResponse(str(_FRONTEND / "pdf-filler.html"), headers=NO_CACHE)
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
 @app.get("/pdf-filler.html", include_in_schema=False)
 def pdf_filler_html_page():
-    return FileResponse(str(_FRONTEND / "pdf-filler.html"), headers=NO_CACHE)
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
 @app.get("/application", include_in_schema=False)
 def application_page():
-    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+    raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
 
 
 @app.get("/application.html", include_in_schema=False)
 def application_html_page():
-    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+    raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
 
 
 @app.get("/application/{step}", include_in_schema=False)
 def application_step_page(step: str):
-    if step not in {"portal", "documents", "details", "review", "submit"}:
-        raise HTTPException(404, "Unknown Saarthi application step")
-    return FileResponse(str(_FRONTEND / "application.html"), headers=NO_CACHE)
+    raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
 
 
 @app.get("/style.css", include_in_schema=False)
@@ -142,7 +140,7 @@ def serve_css():
 
 @app.get("/application.css", include_in_schema=False)
 def serve_application_css():
-    return FileResponse(str(_FRONTEND / "application.css"), media_type="text/css", headers=NO_CACHE)
+    raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
 
 
 @app.get("/app.js", include_in_schema=False)
@@ -152,17 +150,17 @@ def serve_js():
 
 @app.get("/application.js", include_in_schema=False)
 def serve_application_js():
-    return FileResponse(str(_FRONTEND / "application.js"), media_type="application/javascript", headers=NO_CACHE)
+    raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
 
 
 @app.get("/pdf-filler.css", include_in_schema=False)
 def serve_pdf_filler_css():
-    return FileResponse(str(_FRONTEND / "pdf-filler.css"), media_type="text/css", headers=NO_CACHE)
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
 @app.get("/pdf-filler.js", include_in_schema=False)
 def serve_pdf_filler_js():
-    return FileResponse(str(_FRONTEND / "pdf-filler.js"), media_type="application/javascript", headers=NO_CACHE)
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
 
@@ -207,54 +205,16 @@ class PdfFormValuesIn(BaseModel):
     values: Dict[str, Any]
 
 
-@app.post("/sessions/{sid}/pdf-filler/inspect")
+@app.post("/sessions/{sid}/pdf-filler/inspect", include_in_schema=False)
 async def inspect_pdf_form(sid: str, file: UploadFile = File(...)):
-    """Store a user-provided PDF and return its fillable fields with suggestions."""
-    s = _session(sid)
-    filename = Path(file.filename or "form.pdf").name
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Please upload a PDF form")
-    content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(413, "PDF forms must be smaller than 20 MB")
-    form_dir = _SCANS_DIR / sid / "pdf-forms"
-    form_dir.mkdir(parents=True, exist_ok=True)
-    stored_path = form_dir / filename
-    stored_path.write_bytes(content)
-    from app.docgen.pdf_form_filler import inspect_pdf
-    try:
-        plan = inspect_pdf(stored_path, s.profile)
-    except RuntimeError as exc:
-        raise HTTPException(501, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(400, "This PDF could not be read. Upload a valid PDF form and try again.") from exc
-    if not plan["fields"]:
-        raise HTTPException(400, "This PDF has no fillable AcroForm fields. Please upload a fillable PDF form.")
-    s.pdf_form_path = str(stored_path)
-    s.pdf_form_fields = plan["fields"]
-    return plan
+    """Retired PDF form-filling endpoint."""
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
-@app.post("/sessions/{sid}/pdf-filler/fill")
+@app.post("/sessions/{sid}/pdf-filler/fill", include_in_schema=False)
 def fill_pdf_form(sid: str, body: PdfFormValuesIn):
-    """Fill only the reviewed PDF field values and return a download URL."""
-    s = _session(sid)
-    if not s.pdf_form_path or not Path(s.pdf_form_path).is_file():
-        raise HTTPException(400, "Inspect a PDF form before filling it")
-    from app.docgen.pdf_form_filler import fill_pdf
-    try:
-        output_path = fill_pdf(s.pdf_form_path, body.values, OUTPUT_DIR / "pdf-forms")
-    except RuntimeError as exc:
-        raise HTTPException(501, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(400, "The PDF could not be filled. Check the field values and try again.") from exc
-    s.artifacts.append(output_path)
-    return {
-        "status": "ready",
-        "filename": Path(output_path).name,
-        "download_url": "/output/pdf-forms/" + Path(output_path).name,
-        "message": "The PDF was filled with the values you reviewed. Download and verify it before submission.",
-    }
+    """Retired PDF form-filling endpoint."""
+    raise HTTPException(410, "PDF form filling has been removed from Saarthi")
 
 
 # --- STATE 1: GREET ---------------------------------------------------------
@@ -862,7 +822,7 @@ async def citizen_assistant(sid: str, body: AssistantIn):
     elif application_service_id:
         reply = (
             f"I found the {available_services[application_service_id]['name']} service. I have opened its checklist in the Services panel, "
-            "including the official-portal route and the Apply with Saarthi button."
+            "including the documents, fee, processing time, and official guidance."
         )
     elif intent:
         # A complete intent already has a tailored response from the block
@@ -980,25 +940,10 @@ def confirm_and_deliver(sid: str, purpose: str = ""):
 
 
 
-@app.post("/sessions/{sid}/automate_upload")
+@app.post("/sessions/{sid}/automate_upload", include_in_schema=False)
 def trigger_upload_automation(sid: str):
-    """Trigger physical kiosk OS automation to orchestrate file uploads."""
-    _session(sid)
-
-    from app.docgen.document_uploader import upload_documents
-    import threading
-    import os
-
-    scan_dir = os.path.join(os.getcwd(), "scans", sid)
-
-    def run_upload():
-        try:
-            upload_documents(scan_dir, 9222)
-        except Exception as e:
-            print(f"Upload failed: {e}")
-
-    threading.Thread(target=run_upload, daemon=True).start()
-    return {"action": "uploading"}
+    """Retired browser automation endpoint."""
+    raise HTTPException(410, "Browser document upload has been removed from Saarthi")
 
 
 @app.get("/sessions/{sid}/gaps")
@@ -1054,17 +999,12 @@ from fastapi import Request, HTTPException, UploadFile
 class AnalyzeRequest(BaseModel):
     url: str
 
-@app.post("/api/analyze-form")
+@app.post("/api/analyze-form", include_in_schema=False)
 async def api_analyze_form(req: AnalyzeRequest):
-    """Trigger the CUA to navigate to the URL and extract the form schema."""
-    try:
-        from app.agent.analyzer import analyze_form
-        schema = await analyze_form(req.url)
-        return schema.model_dump()
-    except Exception as e:
-        raise HTTPException(500, f"Failed to analyze form: {str(e)}")
+    """Retired browser form scanner endpoint."""
+    raise HTTPException(410, "Browser form scanning has been removed from Saarthi")
 
-@app.post("/api/execute-form")
+@app.post("/api/execute-form", include_in_schema=False)
 async def api_execute_form(_: Request):
     """Retired unsafe browser agent endpoint.
 
@@ -1072,39 +1012,17 @@ async def api_execute_form(_: Request):
     application plan. The old agent could upload files and submit a form, so
     it is deliberately unavailable instead of attempting a best-effort map.
     """
-    raise HTTPException(
-        status_code=410,
-        detail=(
-            "This legacy form executor is disabled because it could upload or "
-            "submit an application. Use the reviewed application flow instead; "
-            "it fills visible fields only and stops for your review."
-        ),
-    )
+    raise HTTPException(status_code=410, detail="Browser form filling and submission have been removed from Saarthi")
 
 
 class UploadDocsIn(BaseModel):
     folder: str
     port: int = 9222
 
-@app.post("/api/upload_documents")
+@app.post("/api/upload_documents", include_in_schema=False)
 def api_upload_documents(body: UploadDocsIn):
-    """Trigger Selenium-based document upload from a local folder."""
-    from app.docgen.document_uploader import upload_documents
-    import threading
-
-    def run_upload():
-        upload_documents(body.folder, body.port)
-
-    threading.Thread(target=run_upload, daemon=True).start()
-    return {
-        "action": "uploading",
-        "message": f"Document upload started from: {body.folder}",
-        "instructions": [
-            "Make sure Chrome is started with: chrome.exe --remote-debugging-port=9222",
-            "Make sure you are on the Document Upload page",
-            f"Files are being read from: {body.folder}",
-        ]
-    }
+    """Retired browser document-upload endpoint."""
+    raise HTTPException(status_code=410, detail="Browser document upload has been removed from Saarthi")
 
 
 
@@ -1120,6 +1038,11 @@ class ApplicationServiceIn(BaseModel):
 
 class ApplicationDetailsIn(BaseModel):
     details: Dict[str, Any]
+
+
+def _browser_automation_removed() -> None:
+    """Fail closed for the retired portal form workflow."""
+    raise HTTPException(410, "Browser form filling and document upload have been removed from Saarthi")
 
 
 def _application_service(service_id: str) -> dict:
@@ -1414,24 +1337,21 @@ def application_readiness(sid: str, service_id: str):
     })
     configured_documents = [doc["name"] for doc in service.get("documents", [])]
     discovered_documents = [str(item) for item in discovered.get("documents", [])]
-    documents = list(dict.fromkeys(configured_documents + discovered_documents))
+    documents = discovered_documents if discovered else configured_documents
     return {
         "service_id": service_id,
         "service": service["name"],
         "portal_url": _portal_url(service),
         "documents": documents,
+        "document_uploads_detected": bool(discovered_documents) if discovered else None,
         "uploaded_document_types": document_types,
         "fields": fields,
         "missing_fields": missing_fields,
-        "ready_to_fill": not missing_fields,
-        "automation_available": bool(mapping_name and mapping),
+        "ready_to_fill": False,
+        "automation_available": False,
         "form_scanned": bool(discovered),
         "scanned_form": {"title": discovered.get("title"), "url": discovered.get("url")} if discovered else None,
-        "automation_message": (
-            "A verified field mapping is available for this service."
-            if mapping_name and mapping
-            else "Saarthi can prepare your documents and guide you to the official portal. Automated form filling is not configured for this service yet."
-        ),
+        "automation_message": "Browser form filling has been removed. Use the official portal to enter and review the application yourself.",
         "safety_note": "Saarthi never receives OTPs or CAPTCHAs and never submits the final application.",
     }
 
@@ -1460,67 +1380,20 @@ def save_application_details(sid: str, service_id: str, body: ApplicationDetails
     return application_readiness(sid, service_id)
 
 
-@app.post('/sessions/{sid}/applications/{service_id}/scan-open-form')
+@app.post('/sessions/{sid}/applications/{service_id}/scan-open-form', include_in_schema=False)
 def scan_open_application_form(sid: str, service_id: str, port: int = 9222):
     """Inspect the form currently open in the citizen's local Saarthi browser."""
-    s = _session(sid)
-    _application_service(service_id)
-    from app.services.portal_scanner import scan_open_form
-    try:
-        discovered = scan_open_form(port)
-    except RuntimeError as exc:
-        raise HTTPException(502, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(502, "Saarthi could not inspect the opened form. Check that the application page is fully loaded and try again.") from exc
-    if not discovered["fields"]:
-        raise HTTPException(400, "No application fields were found. Open the actual form page after login, then try again.")
-    s.discovered_forms[service_id] = discovered
-    plan = application_readiness(sid, service_id)
-    plan["scan_message"] = f"Scanned {len(discovered['fields'])} visible form fields and {len(discovered['documents'])} document requirements from the opened page."
-    return plan
+    _browser_automation_removed()
 
 
-@app.post('/sessions/{sid}/launch_browser')
+@app.post('/sessions/{sid}/launch_browser', include_in_schema=False)
 def launch_browser_endpoint(sid: str, body: ApplicationServiceIn):
     """Open a session-specific, debuggable Chrome window for citizen login."""
-    _session(sid)
-    service = _application_service(body.service_id)
-    url = _portal_url(service)
-    if not url:
-        raise HTTPException(400, "This service needs an official portal_url in services.yaml before it can be opened")
-    try:
-        _launch_chrome(sid, url)
-        return {
-            "status": "success",
-            "portal_url": url,
-            "message": f"The official portal for {service['name']} opened. Log in and complete any OTP or CAPTCHA yourself, then open the correct application page.",
-        }
-    except Exception as e:
-        raise HTTPException(500, f"Failed to launch Google Chrome: {e}")
+    _browser_automation_removed()
 
-@app.post('/sessions/{sid}/automate_fill')
+@app.post('/sessions/{sid}/automate_fill', include_in_schema=False)
 def trigger_fill_automation(sid: str, body: FormFillIn):
-    s = _session(sid)
-    service = _application_service(body.service_id)
-    mapping_name, mapping = _mapping_for_service(service)
-    if not mapping_name or not mapping:
-        raise HTTPException(400, "Automated form filling is not configured for this service yet")
-    readiness = application_readiness(sid, body.service_id)
-    if readiness["missing_fields"]:
-        raise HTTPException(400, "Complete the remaining application details before filling the portal form")
-    s.service_id = body.service_id
-    from app.docgen.form_filler import fill_form
-    import threading
-    threading.Thread(
-        target=fill_form,
-        args=(sid, body.port, mapping_name),
-        kwargs={"proceed_to_upload": False},
-        daemon=True,
-    ).start()
-    return {
-        'action': 'filling',
-        'message': "Saarthi is filling the opened form. It will stop before Save & Proceed so you can review every answer.",
-    }
+    _browser_automation_removed()
 
 
 # --- LIVE-GUIDANCE APPLICATIONS --------------------------------------------
@@ -1598,18 +1471,15 @@ def _live_application_plan(s: Session) -> dict:
         "service": s.live_application["title"],
         "portal_url": s.live_application["url"],
         "documents": [str(item) for item in discovered.get("documents", []) if str(item).strip()],
+        "document_uploads_detected": bool(discovered.get("documents")) if discovered else None,
         "uploaded_document_types": document_types,
         "fields": fields,
         "missing_fields": missing_fields,
-        "ready_to_fill": bool(discovered) and not missing_fields,
-        "automation_available": bool(discovered),
+        "ready_to_fill": False,
+        "automation_available": False,
         "form_scanned": bool(discovered),
         "scanned_form": {"title": discovered.get("title"), "url": discovered.get("url")} if discovered else None,
-        "automation_message": (
-            "Saarthi can fill the reviewed visible fields in the opened form and will never submit it."
-            if discovered
-            else "Open the official portal, log in yourself, then scan the application form to identify its requirements."
-        ),
+        "automation_message": "Browser form filling has been removed. Use the official portal to enter and review the application yourself.",
         "safety_note": "Saarthi never reads passwords, OTPs, CAPTCHAs, or existing form values, and never submits the final application.",
     }
 
@@ -1648,57 +1518,16 @@ def save_live_application_details(sid: str, body: ApplicationDetailsIn):
     return _live_application_plan(s)
 
 
-@app.post('/sessions/{sid}/live-application/launch')
+@app.post('/sessions/{sid}/live-application/launch', include_in_schema=False)
 def launch_live_application(sid: str):
-    s = _session(sid)
-    plan = _live_application_plan(s)
-    try:
-        _launch_chrome(sid, plan["portal_url"])
-        return {
-            "status": "success",
-            "portal_url": plan["portal_url"],
-            "message": "The official portal opened. Log in and complete any OTP or CAPTCHA yourself, then open the application form.",
-        }
-    except Exception as exc:
-        raise HTTPException(500, f"Failed to launch Google Chrome: {exc}") from exc
+    _browser_automation_removed()
 
 
-@app.post('/sessions/{sid}/live-application/scan-open-form')
+@app.post('/sessions/{sid}/live-application/scan-open-form', include_in_schema=False)
 def scan_live_application_form(sid: str, port: int = 9222):
-    s = _session(sid)
-    _live_application_plan(s)
-    from app.services.portal_scanner import scan_open_form
-    try:
-        discovered = scan_open_form(port)
-    except RuntimeError as exc:
-        raise HTTPException(502, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(502, "Saarthi could not inspect the opened form. Check that it is fully loaded and try again.") from exc
-    if not discovered["fields"]:
-        raise HTTPException(400, "No application fields were found. Open the actual application form after login, then try again.")
-    s.discovered_forms[LIVE_APPLICATION_KEY] = discovered
-    plan = _live_application_plan(s)
-    plan["scan_message"] = f"Scanned {len(discovered['fields'])} visible form fields and {len(discovered['documents'])} document requirements from the opened page."
-    return plan
+    _browser_automation_removed()
 
 
-@app.post('/sessions/{sid}/live-application/automate-fill')
+@app.post('/sessions/{sid}/live-application/automate-fill', include_in_schema=False)
 def automate_live_application_fill(sid: str, port: int = 9222):
-    s = _session(sid)
-    plan = _live_application_plan(s)
-    if not plan["form_scanned"]:
-        raise HTTPException(400, "Scan the opened application form before asking Saarthi to fill it")
-    if plan["missing_fields"]:
-        raise HTTPException(400, "Complete the remaining application details before filling the portal form")
-    fields = [
-        {"key": field["key"], "label": field["label"], "value": field["value"], "type": field["type"]}
-        for field in plan["fields"]
-        if field["value"] not in (None, "") and field["type"] != "file"
-    ]
-    from app.services.generic_form_filler import fill_open_form
-    import threading
-    threading.Thread(target=fill_open_form, args=(fields, port), daemon=True).start()
-    return {
-        "action": "filling",
-        "message": "Saarthi is filling only the reviewed visible fields. It will stop before any save, submit, payment, or final application action.",
-    }
+    _browser_automation_removed()

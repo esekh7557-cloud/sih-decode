@@ -109,3 +109,23 @@ def test_live_application_keeps_scanned_question_type_choices_and_constraints():
         assert date["max"] == "2030-12-31"
     finally:
         store.wipe(session.id)
+
+
+def test_live_application_marks_no_upload_form():
+    session = store.create(sample=False)
+    try:
+        start_live_application(
+            session.id,
+            LiveApplicationIn(title="Official application", url="https://myscheme.gov.in/example"),
+        )
+        session.discovered_forms[LIVE_APPLICATION_KEY] = {
+            "title": "No-upload form",
+            "url": "https://myscheme.gov.in/example/form",
+            "fields": [{"key": "name", "label": "Name", "type": "text", "required": True}],
+            "documents": [],
+        }
+        plan = live_application_readiness(session.id)
+        assert plan["documents"] == []
+        assert plan["document_uploads_detected"] is False
+    finally:
+        store.wipe(session.id)
