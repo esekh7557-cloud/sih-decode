@@ -32,8 +32,6 @@ class MockScanner(BaseScanner):
     """Deterministic scanner for demo mode and tests."""
 
     async def scan(self, expected_type: str | None = None, images: list[str] = None, chat_history: list[dict] = None) -> ScanResult:
-        if images and len(images) > 0:
-            return await AIVisionScanner().scan(expected_type, images)
         return ScanResult(
             document_type=expected_type or "aadhaar",
             raw_text="DEMO DOCUMENT",
@@ -46,6 +44,22 @@ class MockScanner(BaseScanner):
             },
             confidence=0.95,
         )
+
+
+def _dummy_scan(expected_type: str | None = None) -> ScanResult:
+    """Return safe, clearly synthetic data for local UI testing only."""
+    return ScanResult(
+        document_type=expected_type or "aadhaar",
+        raw_text="DEMO DOCUMENT",
+        fields={
+            "name": "Demo Citizen",
+            "dob": "01/01/1990",
+            "gender": "female",
+            "annual_income": 150000,
+            "occupation": "farmer",
+        },
+        confidence=0.95,
+    )
 
 
 class TesseractScanner(BaseScanner):
@@ -100,7 +114,12 @@ class AIVisionScanner(BaseScanner):
         if not images and not chat_history:
             return ScanResult(document_type=expected_type or "unknown", raw_text="")
 
-        result = await extract_data_from_images(images, chat_history=chat_history)
+        try:
+            result = await extract_data_from_images(images, chat_history=chat_history)
+        except Exception:
+            if os.getenv("JANSEVA_EXTRACTION_MODE", "ai").strip().lower() == "fallback":
+                return _dummy_scan(expected_type)
+            raise
         if result.get("success") and result.get("extracted_fields"):
             fields = result["extracted_fields"]
             return ScanResult(
@@ -109,6 +128,9 @@ class AIVisionScanner(BaseScanner):
                 fields=fields,
                 confidence=0.95
             )
+
+        if os.getenv("JANSEVA_EXTRACTION_MODE", "ai").strip().lower() == "fallback":
+            return _dummy_scan(expected_type)
 
         print(f"[OCR Scanner] AI Vision extraction failed: {result.get('error')}")
         return ScanResult(
@@ -119,4 +141,7 @@ class AIVisionScanner(BaseScanner):
         )
 
 def get_scanner() -> BaseScanner:
+    mode = os.getenv("JANSEVA_EXTRACTION_MODE", "ai").strip().lower()
+    if mode in {"mock", "dummy"}:
+        return MockScanner()
     return AIVisionScanner()

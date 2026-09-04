@@ -84,6 +84,16 @@ ASSISTANT_FIELD_OPTIONS = {
 # answer, so the citizen does not have to navigate back to the form.
 SCHOLARSHIP_FIELDS = ("age", "state", "occupation", "annual_income", "caste_category")
 
+
+def _apply_extracted_aadhaar(session: Session, fields: dict) -> None:
+    """Store only a validated, masked Aadhaar value from model output."""
+    aadhaar = fields.pop("aadhaar_number", None)
+    if aadhaar is None:
+        return
+    aadhaar_text = str(aadhaar).strip()
+    if session.profile.set_aadhaar(aadhaar_text):
+        fields["aadhaar"] = mask_aadhaar(aadhaar_text)
+
 app = FastAPI(title="JanSeva AI Kiosk", version="0.1.0")
 store = SessionStore()
 
@@ -106,6 +116,8 @@ app.mount("/scans", StaticFiles(directory=str(_SCANS_DIR)), name="scans")
 _FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 _GUIDED_SERVICES_PROJECT = Path(__file__).resolve().parent.parent / "standalone-kiosk"
 _GUIDED_SERVICES_PORT = 8011
+_GUIDED_SERVICES_VERSION = "2"
+_guided_services_active_port: int | None = None
 _guided_services_process: subprocess.Popen | None = None
 _guided_services_start_lock = threading.Lock()
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0", "Pragma": "no-cache"}
@@ -118,28 +130,64 @@ def root():
 
 def _guided_services_backend_url(path: str, query: str = "") -> str:
     suffix = f"?{query}" if query else ""
-    return f"http://127.0.0.1:{_GUIDED_SERVICES_PORT}{path}{suffix}"
+    port = _guided_services_active_port or _GUIDED_SERVICES_PORT
+    return f"http://127.0.0.1:{port}{path}{suffix}"
 
 
-def _guided_services_backend_is_ready() -> bool:
+def _guided_services_backend_is_ready(port: int) -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", _GUIDED_SERVICES_PORT), timeout=0.15):
+        with socket.create_connection(("127.0.0.1", port), timeout=0.15):
             return True
     except OSError:
         return False
 
 
+def _guided_services_backend_is_compatible(port: int) -> bool:
+    if not _guided_services_backend_is_ready(port):
+        return False
+    try:
+        response = httpx.get(
+            f"http://127.0.0.1:{port}/health",
+            timeout=0.4,
+        )
+        return (
+            response.status_code == 200
+            and response.json().get("guided_services_version") == _GUIDED_SERVICES_VERSION
+        )
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+def _find_free_guided_services_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _ensure_guided_services_backend() -> None:
-    """Start the untouched standalone application in an isolated process."""
-    global _guided_services_process
-    if _guided_services_backend_is_ready():
+    """Start the standalone application and avoid routing to stale children."""
+    global _guided_services_active_port, _guided_services_process
+    if _guided_services_active_port and _guided_services_backend_is_compatible(_guided_services_active_port):
         return
 
     with _guided_services_start_lock:
-        if _guided_services_backend_is_ready():
+        if _guided_services_active_port and _guided_services_backend_is_compatible(_guided_services_active_port):
             return
         if not _GUIDED_SERVICES_PROJECT.is_dir():
             raise HTTPException(500, "The standalone guided-services project is missing")
+
+        # A previous server/reloader may have left an older child on the
+        # preferred port. Never route requests to it; use an ephemeral local
+        # port for the compatible child instead of killing an unknown process.
+        if _guided_services_backend_is_compatible(_GUIDED_SERVICES_PORT):
+            _guided_services_active_port = _GUIDED_SERVICES_PORT
+        else:
+            _guided_services_active_port = (
+                _GUIDED_SERVICES_PORT
+                if not _guided_services_backend_is_ready(_GUIDED_SERVICES_PORT)
+                else _find_free_guided_services_port()
+            )
+        port = _guided_services_active_port
 
         process_kwargs: dict[str, Any] = {
             "cwd": str(_GUIDED_SERVICES_PROJECT),
@@ -155,20 +203,23 @@ def _ensure_guided_services_backend() -> None:
                 "-m",
                 "uvicorn",
                 "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(_GUIDED_SERVICES_PORT),
+                 "--host",
+                 "127.0.0.1",
+                 "--port",
+                 str(port),
             ],
             **process_kwargs,
         )
-        for _ in range(30):
-            if _guided_services_backend_is_ready():
+        # Importing the standalone OCR and document-generation stack can take
+        # several seconds on first start, especially on Windows.
+        for _ in range(120):
+            if _guided_services_backend_is_compatible(port):
                 return
             if _guided_services_process.poll() is not None:
                 break
-            time.sleep(0.1)
+            time.sleep(0.25)
 
+    _guided_services_active_port = None
     raise HTTPException(502, "The standalone guided-services application could not start")
 
 
@@ -213,7 +264,7 @@ async def proxy_guided_services_requests(request: Request, call_next):
 
 @app.on_event("shutdown")
 def stop_guided_services_backend() -> None:
-    global _guided_services_process
+    global _guided_services_active_port, _guided_services_process
     if _guided_services_process and _guided_services_process.poll() is None:
         _guided_services_process.terminate()
         try:
@@ -221,6 +272,7 @@ def stop_guided_services_backend() -> None:
         except subprocess.TimeoutExpired:
             _guided_services_process.kill()
     _guided_services_process = None
+    _guided_services_active_port = None
 
 
 @app.get("/guided-services", include_in_schema=False)
@@ -463,10 +515,7 @@ async def scan_chat(sid: str, body: ScanChatIn):
             "language": s.language,
         }
         
-    aadhaar = fields.pop("aadhaar_number", None)
-    if aadhaar:
-        s.profile.set_aadhaar(aadhaar)
-        fields["aadhaar"] = mask_aadhaar(aadhaar)
+    _apply_extracted_aadhaar(s, fields)
         
     for k, v in fields.items():
         if hasattr(s.profile, k) and v:
@@ -587,10 +636,7 @@ async def scan(sid: str, body: ScanIn):
             "language": s.language,
         }
         
-    aadhaar = fields.pop("aadhaar_number", None)
-    if aadhaar:
-        s.profile.set_aadhaar(aadhaar)
-        fields["aadhaar"] = mask_aadhaar(aadhaar)
+    _apply_extracted_aadhaar(s, fields)
         
     for k, v in fields.items():
         if hasattr(s.profile, k) and v:
@@ -631,8 +677,14 @@ class DirectExtractIn(BaseModel):
 @app.post("/api/extract")
 async def extract_documents(body: DirectExtractIn):
     """Direct standalone AI document information extractor."""
-    from app.ocr.ai_extractor import extract_data_from_images
-    return await extract_data_from_images(body.images, model=body.model)
+    try:
+        from app.ocr.ai_extractor import extract_data_from_images
+        return await extract_data_from_images(body.images, model=body.model)
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            "Document extraction is unavailable. Check the extraction dependencies and OPENROUTER_API_KEY.",
+        ) from exc
 
 
 @app.post("/sessions/{sid}/profile")

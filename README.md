@@ -1,6 +1,6 @@
 PS3: Digital Citizen Assistant for multilingual access to government services and schemes.
 
-
+http://127.0.0.1:8000/guided-services
 # JanSeva AI
 
 JanSeva AI is a digital citizen assistant for government services and welfare
@@ -63,13 +63,13 @@ Goa Online. To add another service, add it to `app/data/services.yaml` with:
 
 ## Quick start
 
-After setup, run the project directly from the virtual environment:
+After setup, run the project with:
 
-Windows PowerShell run command:
+Windows PowerShell:
 
     .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-Windows PowerShell setup:
+Windows PowerShell:
 
     python3 -m venv .venv
     .\.venv\Scripts\Activate.ps1
@@ -93,6 +93,13 @@ http://127.0.0.1:8000/docs for interactive API documentation.
 - OPENROUTER_API_KEY enables AI Vision document extraction, optional scheme
   enrichment, and browser-agent features. Never commit a real key.
 - OPENROUTER_MODEL selects the OpenRouter model.
+- JANSEVA_EXTRACTION_MODE controls document extraction: `ai` for normal
+  OpenRouter extraction, `mock` for synthetic local-test data, or `fallback` to
+  try AI and use synthetic data when OpenRouter is unavailable.
+- JANSEVA_FORM_FILLER_MODE controls Selenium form data: `session` for normal
+  operation or `dummy` to use the local test profile in `form_filler.py`.
+- JANSEVA_BROWSER_PROFILE_DIR optionally selects the Edge profile directory used
+  by the local Selenium form-filler test.
 - SERPER_API_KEY optionally enables live official-web guidance. It is never
   required for the Income Certificate flow's built-in Goa Online link.
 - JANSEVA_OUTPUT_DIR sets the generated document directory.

@@ -39,6 +39,7 @@ from app.agent.analyzer import analyze_form
 from app.agent.executor import execute_form_fill
 
 app = FastAPI(title="JanSeva AI Kiosk", version="0.1.0")
+GUIDED_SERVICES_VERSION = "2"
 store = SessionStore()
 
 # --- CORS (allow frontend to call API) ---
@@ -59,6 +60,16 @@ app.mount("/scans", StaticFiles(directory=str(_SCANS_DIR)), name="scans")
 # --- Serve frontend ---
 _FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0", "Pragma": "no-cache"}
+# Keep the extra copy used by the optional portal uploader inside the project by
+# default.  The old value pointed at the original developer's Desktop and made
+# every extraction fail on other machines before the AI scanner was called.
+_DOCUMENT_DIR = Path(os.getenv("JANSEVA_DOCUMENT_DIR", str(Path.cwd() / "data"))).expanduser()
+_BROWSER_PROFILE_DIR = Path(
+    os.getenv(
+        "JANSEVA_BROWSER_PROFILE_DIR",
+        str(Path.cwd() / ".janseva-browser" / "edge-debug-profile"),
+    )
+).expanduser()
 
 
 @app.get("/", include_in_schema=False)
@@ -83,7 +94,11 @@ def serve_js():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "JanSeva AI Kiosk"}
+    return {
+        "status": "ok",
+        "service": "JanSeva AI Kiosk",
+        "guided_services_version": GUIDED_SERVICES_VERSION,
+    }
 
 
 @app.get("/services")
@@ -232,9 +247,10 @@ async def scan_chat(sid: str, body: ScanChatIn):
         }
         
     aadhaar = fields.pop("aadhaar_number", None)
-    if aadhaar:
-        s.profile.set_aadhaar(aadhaar)
-        fields["aadhaar"] = mask_aadhaar(aadhaar)
+    if aadhaar is not None:
+        aadhaar_text = str(aadhaar).strip()
+        if s.profile.set_aadhaar(aadhaar_text):
+            fields["aadhaar"] = mask_aadhaar(aadhaar_text)
         
     for k, v in fields.items():
         if hasattr(s.profile, k) and v:
@@ -281,8 +297,15 @@ async def scan(sid: str, body: ScanIn):
         scan_dir = Path.cwd() / "scans" / sid
         scan_dir.mkdir(parents=True, exist_ok=True)
         
-        data_dir = Path(r"C:\Users\Vedant\Desktop\data")
-        data_dir.mkdir(parents=True, exist_ok=True)
+        # The session copy is the source of truth.  The second copy is only for
+        # the optional browser uploader, so an unavailable export directory must
+        # never prevent document extraction.
+        data_dir = _DOCUMENT_DIR
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"Could not create document export directory {data_dir}: {exc}")
+            data_dir = None
         
         for idx, img_item in enumerate(body.images):
             try:
@@ -313,20 +336,32 @@ async def scan(sid: str, body: ScanIn):
                 decoded_img = base64.b64decode(b64_data)
                 
                 image_path = scan_dir / clean_name
-                data_path = data_dir / clean_name
-                
                 with open(image_path, "wb") as f:
                     f.write(decoded_img)
-                
-                with open(data_path, "wb") as f:
-                    f.write(decoded_img)
+
+                if data_dir is not None:
+                    try:
+                        with open(data_dir / clean_name, "wb") as f:
+                            f.write(decoded_img)
+                    except OSError as exc:
+                        print(f"Could not copy scan to document export directory: {exc}")
                     
                 s.scans[clean_name] = str(image_path.absolute())
             except Exception as e:
                 print(f"Failed to save scan locally: {e}")
     # -------------------------------------------------
     
-    result = await get_scanner().scan(body.expected_type, images=raw_b64_images, chat_history=s.chat_history)
+    try:
+        result = await get_scanner().scan(
+            body.expected_type,
+            images=raw_b64_images,
+            chat_history=s.chat_history,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            "Document extraction is unavailable. Check OPENROUTER_API_KEY and install the project dependencies.",
+        ) from exc
     if result.confidence < CONFIDENCE_THRESHOLD:
         q = get_phrase("scan_request", s.language, doc=body.expected_type)
         s.chat_history.append({"role": "assistant", "content": q})
@@ -353,9 +388,10 @@ async def scan(sid: str, body: ScanIn):
         }
         
     aadhaar = fields.pop("aadhaar_number", None)
-    if aadhaar:
-        s.profile.set_aadhaar(aadhaar)
-        fields["aadhaar"] = mask_aadhaar(aadhaar)
+    if aadhaar is not None:
+        aadhaar_text = str(aadhaar).strip()
+        if s.profile.set_aadhaar(aadhaar_text):
+            fields["aadhaar"] = mask_aadhaar(aadhaar_text)
         
     for k, v in fields.items():
         if hasattr(s.profile, k) and v:
@@ -381,8 +417,14 @@ class DirectExtractIn(BaseModel):
 @app.post("/api/extract")
 async def extract_documents(body: DirectExtractIn):
     """Direct standalone AI document information extractor."""
-    from app.ocr.ai_extractor import extract_data_from_images
-    return await extract_data_from_images(body.images, model=body.model)
+    try:
+        from app.ocr.ai_extractor import extract_data_from_images
+        return await extract_data_from_images(body.images, model=body.model)
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            "Document extraction is unavailable. Check the extraction dependencies and OPENROUTER_API_KEY.",
+        ) from exc
 
 
 @app.post("/sessions/{sid}/profile")
@@ -579,7 +621,7 @@ async def api_execute_form(request: Request):
 
 
 class UploadDocsIn(BaseModel):
-    folder: str = r"C:\Users\Vedant\Desktop\data"
+    folder: str = str(_DOCUMENT_DIR)
     port: int = 9222
 
 @app.post("/api/upload_documents")
@@ -615,7 +657,8 @@ def launch_browser_endpoint(sid: str):
     import subprocess
     import os
     try:
-        profile_dir = r"C:\Users\Vedant\Desktop\edge-debug-profile"
+        profile_dir = _BROWSER_PROFILE_DIR
+        profile_dir.mkdir(parents=True, exist_ok=True)
         url = "https://goaonline.gov.in/Appln/UIP/DeptServices?__ns=Revenue"
         cmd = f'start msedge --remote-debugging-port=9222 "--user-data-dir={profile_dir}" "{url}"'
         subprocess.Popen(cmd, shell=True)

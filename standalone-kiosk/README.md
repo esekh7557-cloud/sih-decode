@@ -38,6 +38,23 @@ Open http://localhost:8000/docs for the interactive API. Demo mode
 (`JANSEVA_DEMO_MODE=1`, default) mocks the camera and lets the whole flow run
 end-to-end without kiosk hardware.
 
+For local extraction UI testing without OpenRouter, set
+`JANSEVA_EXTRACTION_MODE=mock` before starting the server. This returns clearly
+synthetic demo fields for every uploaded image. Use `fallback` instead of
+`mock` to try AI first and use the synthetic fields only when AI is unavailable.
+
+To make the Selenium form filler use the dummy profile from
+`app/docgen/form_filler.py`, also set `JANSEVA_FORM_FILLER_MODE=dummy`. This
+overrides the current session profile only for the form-filler test.
+
+Windows PowerShell:
+
+```powershell
+$env:JANSEVA_EXTRACTION_MODE = "mock"
+$env:JANSEVA_FORM_FILLER_MODE = "dummy"
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8011
+```
+
 ## Production extras
 
 - OCR: `apt install tesseract-ocr tesseract-ocr-hin tesseract-ocr-mar tesseract-ocr-guj`

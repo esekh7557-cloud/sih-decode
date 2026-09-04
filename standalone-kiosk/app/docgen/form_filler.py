@@ -45,7 +45,13 @@ def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income
         print(f"Make sure app/docgen/mappings/{certificate_type}.py exists!")
         return
 
-    if session_id:
+    # The browser workflow normally receives the active session id. For local
+    # form-filler testing, allow the explicit dummy mode to use the fallback
+    # profile below even when the request came from a real session.
+    filler_mode = os.getenv("JANSEVA_FORM_FILLER_MODE", "session").strip().lower()
+    use_dummy_data = filler_mode in {"mock", "dummy", "fallback"}
+
+    if session_id and not use_dummy_data:
         from app.main import store
         session = store.get(session_id)
         if not session:
@@ -84,7 +90,7 @@ def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income
             'previous_certificate': 'No',
             'immovable_property': 'No',
             'property_value': '0',
-            'other_income': 'No',
+            'other_income': '0',
             'part_no': '12',
             'serial_no': '34',
             'electoral_year': '2023',
