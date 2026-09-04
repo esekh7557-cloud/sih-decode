@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import time
+from typing import Any
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
@@ -10,6 +11,74 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+
+
+DEFAULT_FORM_DATA: dict[str, Any] = {
+    "certificate_type": "CERT_INC",
+    "applying_for": "Self",
+    "purpose": "economically weaker section",
+    "residence_period": "15",
+    "title": "Mr.",
+    "name": "Rahul Sharma",
+    "place_of_birth": "Panaji",
+    "dob": "15/08/1990",
+    "gender": "male",
+    "marital_status": "Married",
+    "guardian_relation": "Father",
+    "father_name": "Ramesh Kumar",
+    "mobile": "9876543210",
+    "email": "rahul.sharma@example.com",
+    "occupation": "employed",
+    "caste_category": "GENERAL",
+    "address": "Flat 4B, Sunshine Apartments",
+    "locality": "Market Area",
+    "district": "North Goa",
+    "taluka": "Tiswadi",
+    "village": "Panaji",
+    "pincode": "403001",
+    "family_size": "4",
+    "earning_members": "1",
+    "children_count": "2",
+    "previous_certificate": "No",
+    "immovable_property": "no",
+    "property_value": "0",
+    "other_income": "0",
+    "part_no": "12",
+    "serial_no": "345",
+    "electoral_year": "2023",
+    "constituency": "Panaji",
+    "ration_card": "RC1234567",
+    "property_details": "None",
+    "id_proof_type": "aadhaar card",
+    "id_proof_no": "673720425369",
+    "certify": "yes",
+    "family_members": [],
+}
+
+_CERTIFICATE_CODES = {
+    "income_certificate": "CERT_INC",
+    "caste_certificate": "CERT_CST",
+    "residence_certificate": "CERT_DOM",
+    "domicile_certificate": "CERT_DOM",
+}
+
+
+def default_form_data() -> dict[str, Any]:
+    """Return a per-run copy of the demo values used by the filler."""
+    return dict(DEFAULT_FORM_DATA)
+
+
+def missing_form_data(data: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    """Return only demo fields that must be asked before auto-fill begins."""
+    values = default_form_data() if data is None else data
+    return [
+        {
+            "key": key,
+            "question": f"What is your {key.replace('_', ' ')}?",
+        }
+        for key, value in values.items()
+        if value is None or (isinstance(value, str) and not value.strip())
+    ]
 def wait_and_click_yes(driver, action_name, timeout=10):
     print(f"   [WAIT] Waiting for 'Yes' modal for {action_name}...")
     for _ in range(int(timeout * 2)):
@@ -33,61 +102,22 @@ def wait_and_click_yes(driver, action_name, timeout=10):
     print(f"   [WARN] Could not find 'Yes' modal for {action_name} within {timeout}s")
     return False
 
-def main():
+def fill_form(
+    session_id: str | None,
+    port: int = 9222,
+    certificate_type: str = "income_certificate",
+    data_override: dict[str, Any] | None = None,
+):
     print("=" * 60)
-    print("  JanSeva AI -- Form Filler (Selenium Debugging Mode)")
+    print("  Saarthi -- Form Filler (Selenium Debugging Mode)")
     print("=" * 60)
 
-    # 1. Load Data - from file argument, or use defaults
-    data = None
-    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
-        with open(sys.argv[1], "r", encoding="utf-8") as f:
-            data = json.load(f)
-        print(f"   [OK] Loaded data from: {sys.argv[1]}")
-    
-    if data is None:
-        # Default data for testing
-        data = {
-            "certificate_type": "CERT_INC",  # CERT_INC, CERT_CST, CERT_DOM
-            "applying_for": "Self",
-            "purpose": "economically weaker section",
-            "residence_period": "15",
-            "title": "Mr.",
-            "name": "Rahul Sharma",
-            "place_of_birth": "Panaji",
-            "dob": "15/08/1990",
-            "gender": "male",
-            "marital_status": "Married",
-            "guardian_relation": "Father",
-            "father_name": "Ramesh Kumar",  
-            "mobile": "9876543210",
-            "email": "rahul.sharma@example.com",
-            "occupation": "employed", 
-            "caste_category": "GENERAL",
-            "address": "Flat 4B, Sunshine Apartments",
-            "locality": "Market Area",
-            "district": "North Goa",
-            "taluka": "Tiswadi",
-            "village": "Panaji",
-            "pincode": "403001",
-            "family_size": "4",
-            "earning_members": "1",
-            "children_count": "2",
-            "previous_certificate": "No",
-            "immovable_property": "no", 
-            "property_value": "0",
-            "other_income": "0",
-            "part_no": "12",
-            "serial_no": "345",
-            "electoral_year": "2023",
-            "constituency": "Panaji",
-            "ration_card": "RC1234567",
-            "property_details": "None",
-            "id_proof_type": "aadhaar card", 
-            "id_proof_no": "673720425369",
-            "certify": "yes",
-            "family_members": []
-        }
+    # Use a fresh demo-data copy for every run. Answers from the Guided
+    # Services page are merged only into this local copy and are never saved.
+    data = default_form_data()
+    if data_override:
+        data.update({key: value for key, value in data_override.items() if key in data and value is not None})
+    data["certificate_type"] = _CERTIFICATE_CODES.get(certificate_type, certificate_type or data["certificate_type"])
     
     cert_type = data.get("certificate_type", "CERT_INC")
     print(f"   [INFO] Certificate type: {cert_type}")
@@ -95,7 +125,7 @@ def main():
     # 2. Connect to existing Edge browser
     print("\n[CONNECT] Connecting to Edge on port 9222...")
     edge_options = Options()
-    edge_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
 
     try:
         driver = webdriver.Edge(options=edge_options)
@@ -510,7 +540,19 @@ def main():
     
     print("\n[LAUNCH] Automatically running Document Uploader...")
     import subprocess
-    subprocess.run([sys.executable, "-m", "app.docgen.document_uploader"])
+    subprocess.run([sys.executable, "-m", "app.guided_services.document_uploader"])
+
+
+def main():
+    """Keep command-line use working while Guided Services uses fill_form()."""
+    data_override: dict[str, Any] | None = None
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        with open(sys.argv[1], "r", encoding="utf-8") as file:
+            data_override = json.load(file)
+        print(f"   [OK] Loaded data from: {sys.argv[1]}")
+    certificate_type = str((data_override or {}).get("certificate_type", "income_certificate"))
+    fill_form(None, certificate_type=certificate_type, data_override=data_override)
+
 
 if __name__ == "__main__":
     main()

@@ -22,6 +22,7 @@ let selectedImages = [];
 let sessionRecoveryPromise = null;
 let demoAnsweredData = {};
 let currentDemoQuestionIndex = 0;
+let demoBrowserStarted = false;
 
 // ── DOM Refs ──
 const panels = () => document.querySelectorAll(".panel");
@@ -296,7 +297,7 @@ async function triggerAutoFill() {
       certType = "caste_certificate";
   }
   
-  const btn = document.getElementById("btn-trigger-fill");
+  const btn = document.getElementById("demo-trigger-fill") || document.getElementById("btn-trigger-fill");
   const originalText = btn ? btn.innerHTML : "";
   if (btn) {
     btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;"></span>Filling Form...';
@@ -891,7 +892,7 @@ function renderDemoQuestion() {
   const field = fields[currentDemoQuestionIndex];
   if (!field) {
     section.hidden = true;
-    void triggerAutoFill();
+    void openDemoBrowser();
     return;
   }
 
@@ -926,6 +927,31 @@ async function continueDemoQuestion() {
   demoAnsweredData[field.key] = readDynamicFieldValue(field, "demo");
   currentDemoQuestionIndex += 1;
   renderDemoQuestion();
+}
+
+async function openDemoBrowser() {
+  if (!sessionId || demoBrowserStarted) return;
+  const section = document.getElementById("demo-autofill-ready");
+  const status = document.getElementById("demo-autofill-status");
+  const fillButton = document.getElementById("demo-trigger-fill");
+  if (!section || !status || !fillButton) return;
+
+  demoBrowserStarted = true;
+  section.hidden = false;
+  fillButton.hidden = true;
+  status.textContent = "Opening the official portal in Edge…";
+  try {
+    await api(`/sessions/${sessionId}/launch_browser`, "POST", {
+      service_id: selectedServiceId,
+    });
+    status.textContent = "The official portal is open in Edge. Complete login, OTP, or CAPTCHA there, then return here.";
+    fillButton.hidden = false;
+    section.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (error) {
+    demoBrowserStarted = false;
+    status.textContent = "Could not open the official portal: " + error.message;
+    toast("Could not open the official portal: " + error.message, "error");
+  }
 }
 
 // ===================================================================
@@ -1218,11 +1244,13 @@ async function startAnother() {
       deliverData = null;
       demoAnsweredData = {};
       currentDemoQuestionIndex = 0;
+      demoBrowserStarted = false;
       document.getElementById("fill-confirm-area").style.display = "none";
       document.getElementById("scheme-results").innerHTML = "";
       document.getElementById("scan-confirm-area").style.display = "none";
       document.getElementById("scan-fields").innerHTML = "";
       document.getElementById("demo-question-section").hidden = true;
+      document.getElementById("demo-autofill-ready").hidden = true;
       const msgsAnother = {
         en: "Starting another application...",
         hi: "नया आवेदन शुरू कर रहे हैं...",
@@ -1249,6 +1277,7 @@ function resetUI() {
   requiredFieldData = null;
   demoAnsweredData = {};
   currentDemoQuestionIndex = 0;
+  demoBrowserStarted = false;
   
   const previewArea = document.getElementById("image-preview-area");
   if (previewArea) previewArea.style.display = "none";
@@ -1279,6 +1308,7 @@ function resetUI() {
   document.getElementById("scan-confirm-area").style.display = "none";
   document.getElementById("scan-fields").innerHTML = "";
   document.getElementById("demo-question-section").hidden = true;
+  document.getElementById("demo-autofill-ready").hidden = true;
   document.getElementById("printer-note").style.display = "none";
   
   const autofillSec = document.getElementById("autofill-section");

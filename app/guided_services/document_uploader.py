@@ -1,5 +1,5 @@
 """
-Saarthi - Document Uploader (Edge / Selenium Mode)
+JanSeva AI - Document Uploader (Edge / Selenium Mode)
 """
 
 import os
@@ -32,14 +32,30 @@ DOCUMENT_MAP = {
 }
 
 
-def upload_documents(folder: str, port: int = 9222):
-    data_folder = Path(folder)
+def main():
+    parser = argparse.ArgumentParser(
+        description="Upload documents to Goa Online portal from a local folder"
+    )
+    parser.add_argument(
+        "--folder", "-f",
+        default=r"C:\Users\Vedant\Desktop\data",
+        help="Path to folder containing document images (default: Desktop\\data)"
+    )
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=9222,
+        help="Chrome remote debugging port (default: 9222)"
+    )
+    args = parser.parse_args()
+
+    data_folder = Path(args.folder)
     if not data_folder.exists():
         print(f"[ERROR] Folder not found: {data_folder}")
         sys.exit(1)
 
     print("=" * 60)
-    print("  Saarthi -- Document Uploader (Edge Debugging Mode)")
+    print("  JanSeva AI -- Document Uploader (Edge Debugging Mode)")
     print("=" * 60)
     print(f"\n[SCAN] Scanning folder: {data_folder}")
 
@@ -47,21 +63,17 @@ def upload_documents(folder: str, port: int = 9222):
     matches = []
     for ext in ['*.jpg', '*.jpeg', '*.png', '*.pdf']:
         for file_path in data_folder.glob(ext):
-            stem = file_path.stem.lower().strip().replace(" ", "").replace("_", "")
+            stem = file_path.stem.lower().strip()
             
-            matched_labels = []
+            matched_label = None
             for key, labels in DOCUMENT_MAP.items():
-                clean_key = key.replace(" ", "").replace("_", "")
-                clean_aliases = [l.lower().replace(" ", "").replace("_", "") for l in labels]
-                
-                if clean_key == stem or stem in clean_aliases or clean_key in stem:
-                    for lbl in labels:
-                        if lbl not in matched_labels:
-                            matched_labels.append(lbl)
+                if key == stem:
+                    matched_label = labels[0]
+                    break
             
-            if matched_labels:
-                print(f"  [OK] Matched: '{file_path.name}' -> {matched_labels}")
-                matches.append((matched_labels, str(file_path.absolute())))
+            if matched_label:
+                print(f"  [OK] Matched: '{file_path.name}' -> '{matched_label}'")
+                matches.append((matched_label, str(file_path.absolute())))
             else:
                 print(f"  [SKIP] No match for: '{file_path.name}'")
 
@@ -76,14 +88,14 @@ def upload_documents(folder: str, port: int = 9222):
     # ---------------------------------------------------------
     # SELENIUM SETUP
     # ---------------------------------------------------------
-    print(f"\n[CONNECT] Connecting to Edge on port {port}...")
+    print(f"\n[CONNECT] Connecting to Edge on port {args.port}...")
     
     from selenium import webdriver
     from selenium.webdriver.edge.options import Options
 
     edge_options = Options()
     # This tells Selenium to attach to the ALREADY RUNNING Edge browser
-    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
+    edge_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{args.port}")
 
     try:
         driver = webdriver.Edge(options=edge_options)
@@ -99,7 +111,7 @@ def upload_documents(folder: str, port: int = 9222):
     except Exception as e:
         print(f"\n[ERROR] Could not connect to Edge!")
         print(f"   Make sure you started Edge with:")
-        print(f"   msedge.exe --remote-debugging-port={port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\edge-debug-profile\"")
+        print(f"   msedge.exe --remote-debugging-port={args.port} --user-data-dir=\"C:\\Users\\Vedant\\Desktop\\edge-debug-profile\"")
         sys.exit(1)
 
     # ---------------------------------------------------------
@@ -108,20 +120,17 @@ def upload_documents(folder: str, port: int = 9222):
     uploaded = 0
     failed = 0
 
-    for labels, file_path in matches:
-        for label in labels:
-            print(f"\n[UPLOAD] Checking slots for: {label} using {os.path.basename(file_path)}")
-            attempts = 0
-            while attempts < 3: # Max 3 uploads per label to avoid infinite loops
-                success = _upload_single_document(driver, label, file_path)
-                
-                if success:
-                    uploaded += 1
-                    print(f"   [OK] Uploaded successfully to a slot for '{label}'!")
-                    time.sleep(1.5)
-                else:
-                    break # No more slots found or failed
-                attempts += 1
+    for label, file_path in matches:
+        print(f"\n[UPLOAD] Uploading: {label}")
+        success = _upload_single_document(driver, label, file_path)
+        
+        if success:
+            uploaded += 1
+            print(f"   [OK] Uploaded successfully!")
+        else:
+            failed += 1
+            
+        time.sleep(1.5)  # Pause between uploads
 
     print("\n" + "="*50)
     print(f"[SUMMARY] Upload: {uploaded} succeeded, {failed} failed out of {len(matches)} total")
@@ -139,18 +148,14 @@ def _upload_single_document(driver, label: str, file_path: str) -> bool:
         const label = arguments[0];
         const rows = document.querySelectorAll('tr');
         for (const row of rows) {
-            const textContent = row.textContent.toLowerCase();
-            if (textContent.includes(label.toLowerCase())) {
-                // Check if it already has an uploaded document
-                const hasUploaded = row.querySelector('a[title*="View"], a[title*="Delete"], i.fa-trash, i.fa-eye, a[title*="Download"]');
-                if (hasUploaded) {
-                    continue; // Skip this row, already uploaded
-                }
-                
-                const uploadBtn = row.querySelector('button[data-toggle="modal"], a[data-toggle="modal"]');
-                if (uploadBtn) {
-                    uploadBtn.click();
-                    return 'clicked';
+            const labels = row.querySelectorAll('label.inline-label');
+            for (const lbl of labels) {
+                if (lbl.textContent.trim().toLowerCase().includes(label.toLowerCase())) {
+                    const uploadBtn = row.querySelector('button[data-toggle="modal"]');
+                    if (uploadBtn) {
+                        uploadBtn.click();
+                        return 'clicked';
+                    }
                 }
             }
         }
@@ -258,24 +263,5 @@ def _close_modal(driver):
         pass
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Upload documents to Goa Online portal from a local folder"
-    )
-    parser.add_argument(
-        "--folder", "-f",
-        default=r"C:\Users\Vedant\Desktop\data",
-        help="Path to folder containing document images"
-    )
-    parser.add_argument(
-        "--port", "-p",
-        type=int,
-        default=9222,
-        help="Chrome remote debugging port"
-    )
-    args = parser.parse_args()
-    upload_documents(args.folder, args.port)
-
 if __name__ == "__main__":
     main()
-
