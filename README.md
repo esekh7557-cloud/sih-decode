@@ -1,9 +1,8 @@
 PS3: Digital Citizen Assistant for multilingual access to government services and schemes.
 
-http://127.0.0.1:8000/guided-services
-# JanSeva AI
+# Saarthi
 
-JanSeva AI is a digital citizen assistant for government services and welfare
+Saarthi is a digital citizen assistant for government services and welfare
 schemes. It helps a citizen enter or upload their details, ask for assistance
 in plain language, understand certificate requirements, and discover scheme
 matches with clear reasons and application steps.
@@ -22,7 +21,7 @@ starts. It provides:
   - I need an income certificate.
   - Can I apply for PM-KISAN?
 - Conversational follow-up questions for intent-specific requests. For example,
-  when a citizen asks for a scholarship, JanSeva asks for missing age, student
+  when a citizen asks for a scholarship, Saarthi asks for missing age, student
   status, income, category, or state details, saves clear answers to the
   session profile, and refreshes the scholarship matches.
 - Explainable scheme cards with eligibility reason, benefit, and application
@@ -49,12 +48,13 @@ starts. It provides:
    (never name, phone, Aadhaar, or address), then show the official source.
 
 Browser portal form scanning, autofill, and document-upload automation have
-been retired. Saarthi provides official links and checklists; the citizen
-completes the portal form and uploads directly on that official site.
+been moved into the integrated Guided Services page. Open
+http://127.0.0.1:8000/guided-services to use the standalone guided flow and
+its browser/document automation with the dashboard's current session.
 
-The browser application preparation workflow has been removed. Use the official
-portal links and service checklists to complete forms and upload documents
-directly on the government website.
+The dashboard's former application automation endpoints remain retired. The
+standalone automation is available only from the Guided Services page under
+the `/guided-services` API namespace.
 
 1. Ask for a named service (for example, “I need a residence certificate”) or
 The current catalog connects Income, Residence, and Caste Certificates for
@@ -85,8 +85,10 @@ Linux or macOS:
     cp .env.example .env
     python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-Open http://127.0.0.1:8000 for the dashboard and
-http://127.0.0.1:8000/docs for interactive API documentation.
+Open http://127.0.0.1:8000 for the dashboard,
+http://127.0.0.1:8000/guided-services for the integrated standalone guided
+flow, and http://127.0.0.1:8000/docs for interactive API documentation. Both
+pages can use the same in-memory session when opened in the same browser.
 
 ## Configuration
 
@@ -99,11 +101,10 @@ http://127.0.0.1:8000/docs for interactive API documentation.
 - JANSEVA_FORM_FILLER_MODE controls Selenium form data: `session` for normal
   operation or `dummy` to use the local test profile in `form_filler.py`.
 - JANSEVA_BROWSER_PROFILE_DIR optionally selects the Edge profile directory used
-  by the local Selenium form-filler test.
+  by the Guided Services Selenium form-filler and uploader.
 - SERPER_API_KEY optionally enables live official-web guidance. It is never
   required for the Income Certificate flow's built-in Goa Online link.
 - JANSEVA_OUTPUT_DIR sets the generated document directory.
-- JANSEVA_BASE_URL sets the URL included in QR-code download fallbacks.
 - `app/data/sample_profile.yaml` contains the starter profile loaded into every
   new local demo session, so development restarts do not require repeated
   onboarding entry. Replace its clearly marked demo values before real use.
@@ -124,6 +125,11 @@ Vision implementation.
 | POST | /sessions/{id}/scan | Extract data from uploaded document images |
 | POST | /sessions/{id}/service | Retrieve a service checklist |
 | DELETE | /sessions/{id} | End the session and wipe tracked artifacts |
+
+The integrated Guided Services API uses the same operations under the
+`/guided-services` prefix, including `/guided-services/sessions/{id}/launch_browser`,
+`/guided-services/sessions/{id}/automate_fill`, and
+`/guided-services/sessions/{id}/automate_upload`.
 
 ## Current scope and safety
 

@@ -1,5 +1,5 @@
 /**
- * JanSeva AI Kiosk — Frontend Application Logic
+ * Saarthi Kiosk — Frontend Application Logic
  *
  * Drives the 6-state wizard:
  *   GREET → IDENTIFY → CHECKLIST → SCAN → FILL → DELIVER
@@ -1216,4 +1216,3 @@ window.addEventListener('DOMContentLoaded', async () => {
     toast("Failed to initialize session: " + e.message, "error");
   }
 });
-

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from app.core.profile import CitizenProfile, sample_profile
 
-log = logging.getLogger("janseva.audit")
+log = logging.getLogger("saarthi.audit")
 
 
 class State(str, Enum):

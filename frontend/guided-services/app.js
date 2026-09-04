@@ -1,21 +1,27 @@
 /**
- * JanSeva AI Kiosk — Frontend Application Logic
+ * Saarthi Kiosk — Frontend Application Logic
  *
  * Drives the 6-state wizard:
  *   GREET → IDENTIFY → CHECKLIST → SCAN → FILL → DELIVER
  */
 
-const API = window.location.origin;
+const API = "/guided-services";
+const ROOT_API = window.location.origin;
+const SESSION_STORAGE_KEY = "janseva.session.id";
 
 // ── State ──
 let sessionId = null;
 let currentStep = 0; // 0-based: 0=GREET, 1=IDENTIFY, 2=CHECKLIST, 3=SCAN, 4=FILL, 5=DELIVER
 let language = "hi";
 let selectedServiceId = null;
+let guidedState = "Goa";
 let scanData = null;
 let schemeResults = [];
 let deliverData = null;
 let selectedImages = [];
+let sessionRecoveryPromise = null;
+let demoAnsweredData = {};
+let currentDemoQuestionIndex = 0;
 
 // ── DOM Refs ──
 const panels = () => document.querySelectorAll(".panel");
@@ -35,15 +41,75 @@ const SERVICE_ICONS = {
 };
 
 // ── Helpers ──
-async function api(path, method = "GET", body = null) {
+async function rawApi(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${API}${path}`, opts);
+  const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Request failed (${res.status})`);
+    const error = new Error(payload.detail || `Request failed (${res.status})`);
+    error.status = res.status;
+    error.detail = payload.detail || "";
+    throw error;
   }
-  return res.json();
+  return payload;
+}
+
+function isMissingSessionError(error) {
+  return error && error.status === 404 && /session not found|already wiped/i.test(error.detail || error.message);
+}
+
+function rememberSession(id) {
+  sessionId = id;
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, id);
+  } catch (_) {
+    // The server session remains usable if browser storage is unavailable.
+  }
+}
+
+async function renewSession() {
+  if (sessionRecoveryPromise) return sessionRecoveryPromise;
+
+  sessionRecoveryPromise = (async () => {
+    const session = await rawApi("/sessions", "POST");
+    rememberSession(session.session_id);
+
+    // Rebuild the small amount of context needed to retry the interrupted
+    // request. Scanned images and form answers are still in the request body.
+    await rawApi(`/sessions/${sessionId}/language`, "POST", { language: language || "en" });
+    await rawApi(`/sessions/${sessionId}/state`, "POST", { state: guidedState || "Goa" });
+    if (selectedServiceId) {
+      await rawApi(`/sessions/${sessionId}/service`, "POST", { service_id: selectedServiceId });
+    }
+
+    toast("Your session was restarted. Saarthi is continuing from the current step.", "info");
+    return session.session_id;
+  })();
+
+  try {
+    return await sessionRecoveryPromise;
+  } finally {
+    sessionRecoveryPromise = null;
+  }
+}
+
+async function api(path, method = "GET", body = null, options = {}) {
+  const requestSessionId = sessionId;
+  try {
+    return await rawApi(path, method, body);
+  } catch (error) {
+    const canRecover = options.recoverSession !== false
+      && method !== "DELETE"
+      && requestSessionId
+      && path.includes(`/sessions/${requestSessionId}`)
+      && isMissingSessionError(error);
+    if (!canRecover) throw error;
+
+    await renewSession();
+    const retryPath = path.replace(`/sessions/${requestSessionId}`, `/sessions/${sessionId}`);
+    return rawApi(retryPath, method, body);
+  }
 }
 
 function toast(msg, type = "info") {
@@ -61,6 +127,16 @@ function createToastContainer() {
   c.className = "toast-container";
   document.body.appendChild(c);
   return c;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[character]));
 }
 
 function showPanel(index) {
@@ -83,18 +159,6 @@ function showPanel(index) {
     c.classList.toggle("done", i < index - 1);
   });
 }
-
-// Auto-initialize session
-window.addEventListener('DOMContentLoaded', async () => {
-  try {
-    const session = await api("/sessions", "POST");
-    sessionId = session.session_id;
-    // Load all services for the state 'Goa' by default
-    loadServices('Goa');
-  } catch (e) {
-    toast("Failed to initialize session.", "error");
-  }
-});
 
 // ===================================================================
 // STEP 0: GREET — Language Selection
@@ -131,7 +195,6 @@ async function selectState(state) {
   try {
     // Update UI and session context
     document.getElementById('card-official').style.display = 'none';
-    document.getElementById('card-admin').style.display = 'none';
     
     await api(`/sessions/${sessionId}/state`, "POST", { state: state });
     
@@ -155,54 +218,66 @@ async function loadServices(state) {
     const url = state ? `/services?state=${encodeURIComponent(state)}&_t=${Date.now()}` : `/services?_t=${Date.now()}`;
     const services = await api(url);
     renderServiceList(services);
+    return services;
   } catch (e) {
     toast("Error fetching services: " + e.message, "error");
   }
 }
 
-function openAdminAuth() {
-  document.getElementById('admin-auth-modal').style.display = 'flex';
-  document.getElementById('admin-auth-error').style.display = 'none';
-  document.getElementById('admin-username').value = '';
-  document.getElementById('admin-password').value = '';
-}
-
-function closeAdminAuth() {
-  document.getElementById('admin-auth-modal').style.display = 'none';
-}
-
-function submitAdminAuth() {
-  const user = document.getElementById('admin-username').value;
-  const pass = document.getElementById('admin-password').value;
-  
-  if (user === 'vedant' && pass === 'vedant') {
-    closeAdminAuth();
-    showPanel(5);
-    adminReset();
-  } else {
-    document.getElementById('admin-auth-error').style.display = 'block';
+async function changeGuidedState(state) {
+  guidedState = state === "Other" ? "Other" : "Goa";
+  if (!sessionId) return;
+  try {
+    await api(`/sessions/${sessionId}/state`, "POST", { state: guidedState });
+    await loadServices(guidedState);
+  } catch (e) {
+    toast("Error changing state: " + e.message, "error");
   }
 }
 
-// ===================================================================
 // STEP 1: IDENTIFY — Service Selection
 // ===================================================================
 function renderServiceList(options) {
   const grid = document.getElementById("service-grid");
   grid.innerHTML = "";
+  if (!options.length) {
+    grid.innerHTML = '<p class="empty-service-message">No services are available for this state yet.</p>';
+    return;
+  }
   options.forEach((opt) => {
     const card = document.createElement("button");
     card.className = "service-card";
     card.onclick = () => selectService(opt.id);
+    const category = opt.id.replace(/_/g, " ");
     card.innerHTML = `
       <div class="svc-icon">${SERVICE_ICONS[opt.id] || "📄"}</div>
       <div>
-        <div class="svc-name">${opt.label}</div>
-        <div class="svc-cat">${opt.id.replace(/_/g, " ")}</div>
+        <div class="svc-name"></div>
+        <div class="svc-cat"></div>
       </div>
     `;
+    card.querySelector(".svc-name").textContent = opt.label || "Unnamed service";
+    card.querySelector(".svc-cat").textContent = category;
     grid.appendChild(card);
   });
+}
+
+async function collectMissingAutomationData() {
+  const requirements = await api(`/sessions/${sessionId}/automate_fill/requirements`);
+  const answers = { ...demoAnsweredData };
+  for (const field of requirements.fields || []) {
+    if (answers[field.key] !== undefined && answers[field.key] !== null && String(answers[field.key]).trim()) {
+      continue;
+    }
+    const answer = window.prompt(field.question || `Enter ${field.key.replace(/_/g, " ")}`);
+    if (answer === null) return null;
+    if (!answer.trim()) {
+      toast("Please enter a value before continuing.", "warning");
+      return null;
+    }
+    answers[field.key] = answer.trim();
+  }
+  return answers;
 }
 
 async function triggerAutoFill() {
@@ -229,9 +304,12 @@ async function triggerAutoFill() {
   }
   
   try {
+    const data = await collectMissingAutomationData();
+    if (data === null) return;
     const res = await api(`/sessions/${sessionId}/automate_fill`, "POST", { 
         port: 9222,
-        certificate_type: certType
+        certificate_type: certType,
+        data,
     });
     if (res.action === "filling") {
       toast("Selenium form filling started! Switch to your Goa Online browser window.", "success");
@@ -279,10 +357,10 @@ function renderChecklist(summary) {
     li.innerHTML = `
       <div class="doc-num">${item.number}</div>
       <div class="doc-info">
-        <div class="doc-name">${item.name}</div>
-        ${item.detail ? `<div class="doc-detail">${item.detail}</div>` : ""}
-        ${item.alternatives ? `<div class="doc-alt">✅ Alternatives: ${item.alternatives.join(", ")}</div>` : ""}
-        ${item.note ? `<div class="doc-note">ℹ️ ${item.note}</div>` : ""}
+        <div class="doc-name">${escapeHtml(item.name)}</div>
+        ${item.detail ? `<div class="doc-detail">${escapeHtml(item.detail)}</div>` : ""}
+        ${item.alternatives ? `<div class="doc-alt">✅ Alternatives: ${escapeHtml(item.alternatives.join(", "))}</div>` : ""}
+        ${item.note ? `<div class="doc-note">ℹ️ ${escapeHtml(item.note)}</div>` : ""}
       </div>
     `;
     list.appendChild(li);
@@ -303,6 +381,7 @@ async function confirmChecklist() {
 // ===================================================================
 let pendingQuestions = [];
 let gatheredAnswers = [];
+let requiredFieldData = null;
 
 function compressImage(file, maxDimension = 1024, quality = 0.75) {
   return new Promise((resolve) => {
@@ -604,55 +683,249 @@ function renderScanResult(fields) {
   }
 }
 
-// Confirm extracted and move to fill
-function confirmScan() {
-  if (scanData) {
-    // Fill each field and highlight it
-    for (const [key, rawValue] of Object.entries(scanData)) {
-      const value = String(rawValue).trim();
-      let targetId = `f-${key}`;
-      
-      // Handle special field name variations
-      if (key === "aadhaar_number" || key === "aadhaar") targetId = "f-id_proof_no";
-      if (key === "pincode" || key === "pin_code") targetId = "f-pincode";
-      if (key === "annual_income" || key === "income") targetId = "f-annual_income";
-      
-      const el = document.getElementById(targetId);
-      if (el) {
-        if (el.tagName === "SELECT") {
-          // Attempt exact match or lowercase match
-          const options = Array.from(el.options);
-          const match = options.find(o => o.value.toLowerCase() === value.toLowerCase());
-          if (match) {
-            el.value = match.value;
-          } else {
-            el.value = value;
-          }
-        } else {
-          el.value = value;
-        }
-        el.classList.add("ai-field-highlight");
-        setTimeout(() => el.classList.remove("ai-field-highlight"), 2500);
-      }
-      
-      // Auto-calculate age from DOB if age field exists and is empty
-      if (key === "dob" && value.includes("/")) {
-        const ageEl = document.getElementById("f-age");
-        if (ageEl && !ageEl.value) {
-          const parts = value.split("/");
-          if (parts.length === 3) {
-            const birthYear = parseInt(parts[2], 10);
-            const currentYear = new Date().getFullYear();
-            if (birthYear > 1900 && birthYear <= currentYear) {
-              ageEl.value = currentYear - birthYear;
-              ageEl.classList.add("ai-field-highlight");
-            }
-          }
-        }
-      }
+async function loadRequiredFieldData() {
+  if (!sessionId) return null;
+  const serviceId = selectedServiceId || "CERT_INC";
+  requiredFieldData = await api(
+    `/sessions/${sessionId}/required-fields?service_id=${encodeURIComponent(serviceId)}`
+  );
+  const missingCount = (requiredFieldData.missing_fields || []).length;
+  const meta = document.getElementById("extraction-meta");
+  if (meta && missingCount > 0) {
+    meta.textContent += ` • ${missingCount} details still needed`;
+  }
+  return requiredFieldData;
+}
+
+function formTargetId(key) {
+  if (key === "pincode" || key === "pin_code") return "f-pincode";
+  if (key === "annual_income" || key === "income") return "f-annual_income";
+  if (key === "aadhaar_number" || key === "aadhaar") return "f-id_proof_no";
+  return `f-${key}`;
+}
+
+function setStaticFieldValue(key, rawValue) {
+  const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
+  const el = document.getElementById(formTargetId(key));
+  if (!el) return;
+  if (el.type === "checkbox") {
+    el.checked = rawValue === true || /^(yes|true|1)$/i.test(value);
+  } else if (el.tagName === "SELECT") {
+    const match = Array.from(el.options).find(
+      (option) => option.value.toLowerCase() === value.toLowerCase()
+    );
+    el.value = match ? match.value : value;
+  } else {
+    el.value = value;
+  }
+}
+
+function populateStaticForm(fields) {
+  for (const field of fields || []) {
+    if (field.value !== "" && field.value !== null && field.value !== undefined) {
+      setStaticFieldValue(field.key, field.value);
     }
   }
-  showPanel(3);
+}
+
+function makeMissingFieldControl(field, prefix = "missing") {
+  const id = `${prefix}-${field.key}`;
+  const options = field.options || [];
+  if (field.type === "select") {
+    const select = document.createElement("select");
+    select.id = id;
+    select.dataset.fieldKey = field.key;
+    select.required = field.required !== false;
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Select an option —";
+    select.appendChild(placeholder);
+    options.forEach((option) => {
+      const item = document.createElement("option");
+      item.value = String(option.value ?? option);
+      item.textContent = String(option.label ?? option.value ?? option);
+      select.appendChild(item);
+    });
+    if (field.value !== "") select.value = String(field.value);
+    return select;
+  }
+
+  if (field.type === "radio") {
+    const group = document.createElement("div");
+    group.className = "choice-group";
+    options.forEach((option, index) => {
+      const label = document.createElement("label");
+      label.className = "choice-option";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = id;
+      input.value = String(option.value ?? option);
+      input.dataset.fieldKey = field.key;
+      input.required = field.required !== false && index === 0;
+      input.checked = String(field.value) === input.value;
+      const text = document.createElement("span");
+      text.textContent = String(option.label ?? option.value ?? option);
+      label.append(input, text);
+      group.appendChild(label);
+    });
+    return group;
+  }
+
+  const input = document.createElement(field.type === "textarea" ? "textarea" : "input");
+  input.id = id;
+  input.dataset.fieldKey = field.key;
+  input.required = field.required !== false;
+  if (field.type !== "textarea") input.type = field.type || "text";
+  if (field.placeholder) input.placeholder = field.placeholder;
+  if (field.min !== undefined) input.min = field.min;
+  if (field.max !== undefined) input.max = field.max;
+  if (field.step !== undefined) input.step = field.step;
+  if (field.max_length) input.maxLength = field.max_length;
+  if (field.inputmode) input.inputMode = field.inputmode;
+  if (input.type === "checkbox") {
+    input.checked = field.value === true || /^(yes|true|1)$/i.test(String(field.value || ""));
+  } else if (input.type !== "file") {
+    input.value = field.value === null || field.value === undefined ? "" : String(field.value);
+  }
+  return input;
+}
+
+function renderMissingInformation(data) {
+  const section = document.getElementById("missing-info-section");
+  const form = document.getElementById("fill-form");
+  const container = document.getElementById("missing-info-fields");
+  if (!section || !form || !container) return;
+  const missing = (data.fields || []).filter((field) => field.missing);
+  container.innerHTML = "";
+  if (missing.length === 0) {
+    section.hidden = true;
+    form.hidden = false;
+    return;
+  }
+  const field = missing[currentDemoQuestionIndex];
+  if (!field) {
+    section.hidden = true;
+    form.hidden = false;
+    return;
+  }
+  document.getElementById("missing-info-copy").textContent =
+    `Question ${currentDemoQuestionIndex + 1} of ${missing.length}: please provide this detail to continue.`;
+  const wrapper = document.createElement("div");
+  wrapper.className = "form-group";
+  const label = document.createElement("label");
+  label.htmlFor = `missing-${field.key}`;
+  label.textContent = field.question || field.label;
+  wrapper.append(label, makeMissingFieldControl(field));
+  container.appendChild(wrapper);
+  const button = document.getElementById("missing-info-next");
+  if (button) {
+    button.textContent = currentDemoQuestionIndex === missing.length - 1
+      ? "Continue to review the complete form →"
+      : "Next question →";
+  }
+  section.hidden = false;
+  form.hidden = true;
+}
+
+function readMissingFieldValue(field) {
+  return readDynamicFieldValue(field, "missing");
+}
+
+function readDynamicFieldValue(field, prefix) {
+  const id = `${prefix}-${field.key}`;
+  if (field.type === "radio") {
+    const selected = document.querySelector(`input[name="${id}"]:checked`);
+    return selected ? selected.value : "";
+  }
+  const input = document.getElementById(id);
+  if (!input) return "";
+  if (input.type === "checkbox") return input.checked ? "Yes" : "No";
+  if (input.type === "file") return input.files?.[0]?.name || "";
+  return input.value.trim();
+}
+
+async function continueFromMissingInfo() {
+  const form = document.getElementById("missing-info-form");
+  if (form && !form.reportValidity()) return;
+  const fields = ((requiredFieldData && requiredFieldData.fields) || []).filter((field) => field.missing);
+  const field = fields[currentDemoQuestionIndex];
+  if (!field) return;
+
+  const value = readMissingFieldValue(field);
+  demoAnsweredData[field.key] = value;
+  setStaticFieldValue(field.key, value);
+  currentDemoQuestionIndex += 1;
+
+  if (currentDemoQuestionIndex < fields.length) {
+    renderMissingInformation(requiredFieldData);
+    return;
+  }
+
+  renderMissingInformation({ fields: fields.map((item) => ({ ...item, missing: false })) });
+  document.getElementById("fill-form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Confirm extracted and move to fill
+async function confirmScan() {
+  try {
+    // Demo mode deliberately ignores OCR values. Only null/empty values from
+    // the automation demo data are presented as questions.
+    const demoRequirements = await api(`/sessions/${sessionId}/automate_fill/requirements`);
+    requiredFieldData = {
+      ...demoRequirements,
+      fields: (demoRequirements.fields || []).map((field) => ({ ...field, missing: true })),
+    };
+    currentDemoQuestionIndex = 0;
+    renderDemoQuestion();
+  } catch (error) {
+    toast("Could not prepare demo auto-fill: " + error.message, "error");
+  }
+}
+
+function renderDemoQuestion() {
+  const section = document.getElementById("demo-question-section");
+  const container = document.getElementById("demo-question-field");
+  const fields = ((requiredFieldData && requiredFieldData.fields) || []).filter((field) => field.missing);
+  if (!section || !container) return;
+
+  const field = fields[currentDemoQuestionIndex];
+  if (!field) {
+    section.hidden = true;
+    void triggerAutoFill();
+    return;
+  }
+
+  container.innerHTML = "";
+  const wrapper = document.createElement("div");
+  wrapper.className = "form-group";
+  const label = document.createElement("label");
+  label.htmlFor = `demo-${field.key}`;
+  label.textContent = field.question || field.label;
+  wrapper.append(label, makeMissingFieldControl(field, "demo"));
+  container.appendChild(wrapper);
+
+  document.getElementById("demo-question-copy").textContent =
+    `Question ${currentDemoQuestionIndex + 1} of ${fields.length}. This value is empty in the demo data.`;
+  const button = document.getElementById("demo-question-next");
+  if (button) {
+    button.textContent = currentDemoQuestionIndex === fields.length - 1
+      ? "Start Auto-Fill →"
+      : "Next question →";
+  }
+  section.hidden = false;
+  section.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function continueDemoQuestion() {
+  const form = document.getElementById("demo-question-form");
+  if (form && !form.reportValidity()) return;
+  const fields = ((requiredFieldData && requiredFieldData.fields) || []).filter((field) => field.missing);
+  const field = fields[currentDemoQuestionIndex];
+  if (!field) return;
+
+  demoAnsweredData[field.key] = readDynamicFieldValue(field, "demo");
+  currentDemoQuestionIndex += 1;
+  renderDemoQuestion();
 }
 
 // ===================================================================
@@ -827,7 +1100,7 @@ async function renderDeliverPanel(data) {
   if (data.receipt) {
     // Convert file path to a URL served by the backend
     const filename = data.receipt.replace(/\\/g, "/").split("/").pop();
-    const url = `${API}/output/${filename}`;
+    const url = `${ROOT_API}/output/${filename}`;
     const card = document.createElement("a");
     card.className = "download-card";
     card.href = url;
@@ -849,13 +1122,6 @@ async function renderDeliverPanel(data) {
       <div class="dl-label">${data.schemes_found.length} Schemes Listed</div>
     `;
     grid.appendChild(card);
-  }
-
-  if (data.qr) {
-    const filename = data.qr.replace(/\\/g, "/").split("/").pop();
-    const url = `${API}/output/${filename}`;
-    document.getElementById("qr-section").style.display = "block";
-    document.getElementById("qr-image").src = url;
   }
 
   if (data.note) {
@@ -930,6 +1196,8 @@ async function endSession() {
     }
   }
   resetUI();
+  // Keep the dashboard from trying to resume the session that was just wiped.
+  localStorage.removeItem(SESSION_STORAGE_KEY);
   const msgsEnd = {
     en: "Session ended. All data wiped.",
     hi: "सत्र समाप्त। सारा डेटा हटा दिया गया।",
@@ -948,10 +1216,13 @@ async function startAnother() {
       scanData = null;
       schemeResults = [];
       deliverData = null;
+      demoAnsweredData = {};
+      currentDemoQuestionIndex = 0;
       document.getElementById("fill-confirm-area").style.display = "none";
       document.getElementById("scheme-results").innerHTML = "";
       document.getElementById("scan-confirm-area").style.display = "none";
       document.getElementById("scan-fields").innerHTML = "";
+      document.getElementById("demo-question-section").hidden = true;
       const msgsAnother = {
         en: "Starting another application...",
         hi: "नया आवेदन शुरू कर रहे हैं...",
@@ -975,6 +1246,9 @@ function resetUI() {
   schemeResults = [];
   deliverData = null;
   selectedImages = [];
+  requiredFieldData = null;
+  demoAnsweredData = {};
+  currentDemoQuestionIndex = 0;
   
   const previewArea = document.getElementById("image-preview-area");
   if (previewArea) previewArea.style.display = "none";
@@ -1004,7 +1278,7 @@ function resetUI() {
   document.getElementById("scheme-results").innerHTML = "";
   document.getElementById("scan-confirm-area").style.display = "none";
   document.getElementById("scan-fields").innerHTML = "";
-  document.getElementById("qr-section").style.display = "none";
+  document.getElementById("demo-question-section").hidden = true;
   document.getElementById("printer-note").style.display = "none";
   
   const autofillSec = document.getElementById("autofill-section");
@@ -1148,7 +1422,9 @@ async function launchBrowser() {
   btnLaunch.disabled = true;
   
   try {
-    await api(`/sessions/${sessionId}/launch_browser`, "POST");
+    await api(`/sessions/${sessionId}/launch_browser`, "POST", {
+      service_id: selectedServiceId,
+    });
     btnLaunch.innerHTML = "✓ Browser Launched";
     btnLaunch.classList.remove("btn-primary");
     btnLaunch.classList.add("btn-secondary");
@@ -1200,20 +1476,43 @@ function printDocument(elementId) {
   setTimeout(() => { win.print(); }, 500);
 }
 
-// Auto-initialize session directly to Income Certificate
+// Reuse the session created by the main website whenever possible.  A direct
+// visit still gets a normal main-app session as a fallback.
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const session = await api("/sessions", "POST");
-    sessionId = session.session_id;
+    const existingSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existingSessionId) {
+      try {
+        const existingSession = await api(
+          `/sessions/${existingSessionId}`,
+          "GET",
+          null,
+          { recoverSession: false },
+        );
+        rememberSession(existingSession.session_id);
+      } catch (_) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    }
+    if (!sessionId) {
+      const session = await api("/sessions", "POST");
+      sessionId = session.session_id;
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    }
     language = "en";
     await api(`/sessions/${sessionId}/language`, "POST", { language: "en" });
-    await api(`/sessions/${sessionId}/state`, "POST", { state: "Goa" });
-    selectedServiceId = "CERT_INC";
-    const result = await api(`/sessions/${sessionId}/service`, "POST", { service_id: "CERT_INC" });
+    guidedState = "Goa";
+    const stateSelect = document.getElementById("guided-state-select");
+    if (stateSelect) stateSelect.value = guidedState;
+    await api(`/sessions/${sessionId}/state`, "POST", { state: guidedState });
+    const availableServices = await loadServices(guidedState) || [];
+    const requestedServiceId = new URLSearchParams(window.location.search).get("service");
+    const requestedIsAvailable = availableServices.some((service) => service.id === requestedServiceId);
+    selectedServiceId = requestedIsAvailable ? requestedServiceId : "CERT_INC";
+    const result = await api(`/sessions/${sessionId}/service`, "POST", { service_id: selectedServiceId });
     renderChecklist(result.summary);
     showPanel(0);
   } catch (e) {
     toast("Failed to initialize session: " + e.message, "error");
   }
 });
-

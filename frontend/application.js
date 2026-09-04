@@ -840,7 +840,7 @@ async function extractDocuments() {
 async function initialise() {
   if (!sessionId) {
     $("#session-status").textContent = "No active session";
-    showAlert("Open this page from the JanSeva dashboard so your secure session can be used.", "error");
+    showAlert("Open this page from the Saarthi dashboard so your secure session can be used.", "error");
     return;
   }
   if (!params.get("service") && params.get("live") !== "1") {

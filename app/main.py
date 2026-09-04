@@ -1,4 +1,4 @@
-"""JanSeva AI kiosk backend - FastAPI orchestrator for the six-state flow.
+"""Saarthi kiosk backend - FastAPI orchestrator for the six-state flow.
 
 GREET -> IDENTIFY -> CHECKLIST -> SCAN -> FILL -> DELIVER
 
@@ -8,11 +8,7 @@ Responses follow the kiosk action protocol:
 import os
 import re
 import shutil
-import socket
 import subprocess
-import sys
-import threading
-import time
 import importlib
 from pathlib import Path
 from urllib.error import URLError
@@ -31,9 +27,8 @@ if _env_path.exists():
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-import httpx
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Union, Any
 
@@ -44,8 +39,9 @@ from app.eligibility.llm_enricher import enrich
 from app.eligibility.rules import LAKH, check_eligibility
 from app.i18n.phrases import SUPPORTED, get_phrase
 from app.ocr.scanner import CONFIDENCE_THRESHOLD, get_scanner
-from app.printing.printer import make_qr, print_document
+from app.printing.printer import print_document
 from app.services.catalog import build_checklist, get_service, list_services
+from app.services.application_schema import required_application_fields
 from app.services.web_search import get_live_guidance, wants_live_search
 
 PORTAL_URLS = {
@@ -94,7 +90,7 @@ def _apply_extracted_aadhaar(session: Session, fields: dict) -> None:
     if session.profile.set_aadhaar(aadhaar_text):
         fields["aadhaar"] = mask_aadhaar(aadhaar_text)
 
-app = FastAPI(title="JanSeva AI Kiosk", version="0.1.0")
+app = FastAPI(title="Saarthi Kiosk", version="0.1.0")
 store = SessionStore()
 
 # --- CORS (allow frontend to call API) ---
@@ -114,174 +110,12 @@ app.mount("/scans", StaticFiles(directory=str(_SCANS_DIR)), name="scans")
 
 # --- Serve frontend ---
 _FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
-_GUIDED_SERVICES_PROJECT = Path(__file__).resolve().parent.parent / "standalone-kiosk"
-_GUIDED_SERVICES_PORT = 8011
-_GUIDED_SERVICES_VERSION = "2"
-_guided_services_active_port: int | None = None
-_guided_services_process: subprocess.Popen | None = None
-_guided_services_start_lock = threading.Lock()
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
 
 @app.get("/", include_in_schema=False)
 def root():
     return FileResponse(str(_FRONTEND / "index.html"), headers=NO_CACHE)
-
-
-def _guided_services_backend_url(path: str, query: str = "") -> str:
-    suffix = f"?{query}" if query else ""
-    port = _guided_services_active_port or _GUIDED_SERVICES_PORT
-    return f"http://127.0.0.1:{port}{path}{suffix}"
-
-
-def _guided_services_backend_is_ready(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.15):
-            return True
-    except OSError:
-        return False
-
-
-def _guided_services_backend_is_compatible(port: int) -> bool:
-    if not _guided_services_backend_is_ready(port):
-        return False
-    try:
-        response = httpx.get(
-            f"http://127.0.0.1:{port}/health",
-            timeout=0.4,
-        )
-        return (
-            response.status_code == 200
-            and response.json().get("guided_services_version") == _GUIDED_SERVICES_VERSION
-        )
-    except (httpx.HTTPError, ValueError):
-        return False
-
-
-def _find_free_guided_services_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _ensure_guided_services_backend() -> None:
-    """Start the standalone application and avoid routing to stale children."""
-    global _guided_services_active_port, _guided_services_process
-    if _guided_services_active_port and _guided_services_backend_is_compatible(_guided_services_active_port):
-        return
-
-    with _guided_services_start_lock:
-        if _guided_services_active_port and _guided_services_backend_is_compatible(_guided_services_active_port):
-            return
-        if not _GUIDED_SERVICES_PROJECT.is_dir():
-            raise HTTPException(500, "The standalone guided-services project is missing")
-
-        # A previous server/reloader may have left an older child on the
-        # preferred port. Never route requests to it; use an ephemeral local
-        # port for the compatible child instead of killing an unknown process.
-        if _guided_services_backend_is_compatible(_GUIDED_SERVICES_PORT):
-            _guided_services_active_port = _GUIDED_SERVICES_PORT
-        else:
-            _guided_services_active_port = (
-                _GUIDED_SERVICES_PORT
-                if not _guided_services_backend_is_ready(_GUIDED_SERVICES_PORT)
-                else _find_free_guided_services_port()
-            )
-        port = _guided_services_active_port
-
-        process_kwargs: dict[str, Any] = {
-            "cwd": str(_GUIDED_SERVICES_PROJECT),
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-        }
-        if os.name == "nt":
-            process_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-
-        _guided_services_process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "app.main:app",
-                 "--host",
-                 "127.0.0.1",
-                 "--port",
-                 str(port),
-            ],
-            **process_kwargs,
-        )
-        # Importing the standalone OCR and document-generation stack can take
-        # several seconds on first start, especially on Windows.
-        for _ in range(120):
-            if _guided_services_backend_is_compatible(port):
-                return
-            if _guided_services_process.poll() is not None:
-                break
-            time.sleep(0.25)
-
-    _guided_services_active_port = None
-    raise HTTPException(502, "The standalone guided-services application could not start")
-
-
-async def _proxy_guided_services_request(request: Request, path: str | None = None):
-    _ensure_guided_services_backend()
-    target_path = path or request.url.path
-    forwarded_headers = {
-        key: value
-        for key, value in request.headers.items()
-        if key.lower() not in {"host", "content-length", "connection"}
-    }
-    try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
-            response = await client.request(
-                request.method,
-                _guided_services_backend_url(target_path, request.url.query),
-                content=await request.body(),
-                headers=forwarded_headers,
-            )
-    except httpx.HTTPError as error:
-        raise HTTPException(502, "The standalone guided-services application is unavailable") from error
-
-    response_headers = {
-        key: value
-        for key, value in response.headers.items()
-        if key.lower() not in {"connection", "content-encoding", "transfer-encoding"}
-    }
-    return Response(content=response.content, status_code=response.status_code, headers=response_headers)
-
-
-def _is_guided_services_request(request: Request) -> bool:
-    referrer_path = urlparse(request.headers.get("referer", "")).path.rstrip("/")
-    return referrer_path == "/guided-services"
-
-
-@app.middleware("http")
-async def proxy_guided_services_requests(request: Request, call_next):
-    if request.url.path != "/guided-services" and _is_guided_services_request(request):
-        return await _proxy_guided_services_request(request)
-    return await call_next(request)
-
-
-@app.on_event("shutdown")
-def stop_guided_services_backend() -> None:
-    global _guided_services_active_port, _guided_services_process
-    if _guided_services_process and _guided_services_process.poll() is None:
-        _guided_services_process.terminate()
-        try:
-            _guided_services_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            _guided_services_process.kill()
-    _guided_services_process = None
-    _guided_services_active_port = None
-
-
-@app.get("/guided-services", include_in_schema=False)
-@app.get("/guided-services/", include_in_schema=False)
-async def guided_services_page(request: Request):
-    """Expose the supplied standalone frontend and backend under one main-app page."""
-    response = await _proxy_guided_services_request(request, path="/")
-    response.headers["Referrer-Policy"] = "same-origin"
-    return response
 
 
 @app.get("/pdf-filler", include_in_schema=False)
@@ -346,7 +180,7 @@ def serve_pdf_filler_js():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "JanSeva AI Kiosk"}
+    return {"status": "ok", "service": "Saarthi Kiosk"}
 
 
 @app.get("/services")
@@ -431,11 +265,11 @@ class StateIn(BaseModel):
 @app.post("/sessions/{sid}/state")
 def set_state(sid: str, body: StateIn):
     s = _session(sid)
-    # Future logic: list_services can take body.state to filter by state catalog
+    s.profile.state = body.state.strip()
     s.state = State.IDENTIFY
     return {
         "action": "menu",
-        "options": [{"id": k, "label": v["name"]} for k, v in list_services().items()],
+        "options": [{"id": k, "label": v["name"]} for k, v in list_services(body.state).items()],
     }
 
 
@@ -518,7 +352,7 @@ async def scan_chat(sid: str, body: ScanChatIn):
     _apply_extracted_aadhaar(s, fields)
         
     for k, v in fields.items():
-        if hasattr(s.profile, k) and v:
+        if hasattr(s.profile, k) and v is not None and v != "":
             try:
                 setattr(s.profile, k, v)
             except Exception:
@@ -639,7 +473,7 @@ async def scan(sid: str, body: ScanIn):
     _apply_extracted_aadhaar(s, fields)
         
     for k, v in fields.items():
-        if hasattr(s.profile, k) and v:
+        if hasattr(s.profile, k) and v is not None and v != "":
             try:
                 setattr(s.profile, k, v)
             except Exception:
@@ -1097,13 +931,7 @@ def confirm_and_deliver(sid: str, purpose: str = ""):
         "language": s.language,
     }
     if not printed:
-        import os
-        base_url = os.getenv("JANSEVA_BASE_URL", "http://127.0.0.1:8080")
-        filename = os.path.basename(path)
-        download_url = f"{base_url}/output/{filename}"
-        qr_path = make_qr(download_url)
-        resp["qr"] = f"output/{os.path.basename(qr_path)}"
-        resp["note"] = "Printer unavailable - scan QR to download the PDF"
+        resp["note"] = "Printer unavailable - download the PDF using the link above"
     return resp
 
 
@@ -1124,8 +952,11 @@ def trigger_upload_automation(sid: str):
 
 @app.get("/sessions/{sid}/gaps")
 def get_gaps(sid: str):
-    """Return the missing fields required for the Goa portal."""
+    """Return typed missing fields required for the selected government form."""
     s = _session(sid)
+    if s.service_id == "CERT_INC":
+        return required_application_fields(s.service_id, s.profile)
+
     required = [
         "applying_for", "purpose", "residence_period", "title", "name",
         "place_of_birth", "dob", "gender", "marital_status", "guardian_relation",
@@ -1138,7 +969,7 @@ def get_gaps(sid: str):
     ]
     data = s.profile.model_dump()
     missing = [k for k in required if data.get(k) in (None, "")]
-    return {"missing_fields": missing}
+    return {"service_id": s.service_id, "fields": [], "missing_fields": missing}
 
 
 
@@ -1171,14 +1002,6 @@ import shutil
 import tempfile
 from pathlib import Path
 from fastapi import Request, HTTPException, UploadFile
-
-class AnalyzeRequest(BaseModel):
-    url: str
-
-@app.post("/api/analyze-form", include_in_schema=False)
-async def api_analyze_form(req: AnalyzeRequest):
-    """Retired browser form scanner endpoint."""
-    raise HTTPException(410, "Browser form scanning has been removed from Saarthi")
 
 @app.post("/api/execute-form", include_in_schema=False)
 async def api_execute_form(_: Request):
@@ -1707,3 +1530,11 @@ def scan_live_application_form(sid: str, port: int = 9222):
 @app.post('/sessions/{sid}/live-application/automate-fill', include_in_schema=False)
 def automate_live_application_fill(sid: str, port: int = 9222):
     _browser_automation_removed()
+
+
+# The former standalone server is now an in-process page.  Its router is
+# namespaced so it can reuse this app's SessionStore without colliding with
+# the main website's routes.
+from app.guided_services.router import router as guided_services_router
+
+app.include_router(guided_services_router)

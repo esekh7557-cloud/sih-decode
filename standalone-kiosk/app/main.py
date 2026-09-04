@@ -1,4 +1,4 @@
-"""JanSeva AI kiosk backend - FastAPI orchestrator for the six-state flow.
+"""Saarthi kiosk backend - FastAPI orchestrator for the six-state flow.
 
 GREET -> IDENTIFY -> CHECKLIST -> SCAN -> FILL -> DELIVER
 
@@ -38,7 +38,7 @@ from app.services.catalog import build_checklist, get_service, list_services
 from app.agent.analyzer import analyze_form
 from app.agent.executor import execute_form_fill
 
-app = FastAPI(title="JanSeva AI Kiosk", version="0.1.0")
+app = FastAPI(title="Saarthi Kiosk", version="0.1.0")
 GUIDED_SERVICES_VERSION = "2"
 store = SessionStore()
 
@@ -96,7 +96,7 @@ def serve_js():
 def health():
     return {
         "status": "ok",
-        "service": "JanSeva AI Kiosk",
+        "service": "Saarthi Kiosk",
         "guided_services_version": GUIDED_SERVICES_VERSION,
     }
 

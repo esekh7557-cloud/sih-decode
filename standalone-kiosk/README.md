@@ -1,4 +1,4 @@
-# JanSeva AI - Digital Citizen Assistant Kiosk
+# Saarthi - Digital Citizen Assistant Kiosk
 
 Free public-kiosk assistant for Mamlatdar/Tehsildar offices in India. Helps
 citizens obtain certificates and discover government schemes they are entitled

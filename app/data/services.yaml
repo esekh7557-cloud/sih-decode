@@ -11,6 +11,45 @@ CERT_INC:
   portal: goa_online
   portal_url: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV07"
   automation_mapping: income_certificate
+  application_fields:
+    - applying_for
+    - purpose
+    - residence_period
+    - title
+    - name
+    - place_of_birth
+    - dob
+    - gender
+    - marital_status
+    - guardian_relation
+    - father_name
+    - mobile
+    - email
+    - occupation
+    - annual_income
+    - caste_category
+    - address
+    - locality
+    - district
+    - taluka
+    - village
+    - pincode
+    - family_size
+    - earning_members
+    - children_count
+    - previous_certificate
+    - immovable_property
+    - property_value
+    - other_income
+    - part_no
+    - serial_no
+    - electoral_year
+    - constituency
+    - ration_card
+    - property_details
+    - id_proof_type
+    - id_proof_no
+    - certify
   documents:
     - name: Voter Id card - Id proof
     - name: Aadhaar Card

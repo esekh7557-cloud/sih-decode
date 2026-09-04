@@ -18,11 +18,11 @@ from PIL import Image
 
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are a precision OCR and document information extraction AI for the JanSeva portal.
+SYSTEM_PROMPT = """You are a precision OCR and document information extraction AI for the Saarthi portal.
 Analyze the provided document image(s) and any conversation history. Your goal is to extract factual information and fill the following required schema:
 
 {
-  "applying_for": Self,
+  "applying_for": null,
   "purpose": null,
   "residence_period": null,
   "title": null,
@@ -46,10 +46,10 @@ Analyze the provided document image(s) and any conversation history. Your goal i
   "family_size": null,
   "earning_members": null,
   "children_count": null,
-  "previous_certificate": No,
-  "immovable_property": No, 
-  "property_value": 0,
-  "other_income": 0,
+  "previous_certificate": null,
+  "immovable_property": null,
+  "property_value": null,
+  "other_income": null,
   "part_no": null,
   "serial_no": null,
   "electoral_year": null,
@@ -58,7 +58,8 @@ Analyze the provided document image(s) and any conversation history. Your goal i
   "property_details": null,
   "id_proof_type": null, 
   "id_proof_no": null,   
-  "certify": "yes"
+  "certify": null,
+  "annual_income": null
 }
 
 Extraction Guidelines:
@@ -67,6 +68,7 @@ Extraction Guidelines:
 3. ALWAYS return every factual field that is visible in the document, even when many other fields are missing.
 4. Omit fields that are missing or unreadable. Do not ask questions and do not return an action or questions key.
 5. Return only one valid JSON object containing the extracted key-value pairs. Do not include markdown fences, explanations, placeholder values, or guessed values.
+6. In particular, do not assume defaults such as Self, No, 0, or Yes. Omit a field when it is not explicitly known.
 """
 
 
@@ -183,7 +185,7 @@ async def extract_data_from_images(
                     headers={
                         "Authorization": f"Bearer {key}",
                         "HTTP-Referer": "https://janseva.ai",
-                        "X-Title": "JanSeva Document Extractor"
+                        "X-Title": "Saarthi Document Extractor"
                     },
                     json=payload
                 )

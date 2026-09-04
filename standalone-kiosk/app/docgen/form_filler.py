@@ -33,7 +33,7 @@ def wait_and_click_yes(driver, action_name, timeout=2):
 def fill_form(session_id: str, port: int = 9222, certificate_type: str = "income_certificate"):
     import importlib
     print("=" * 60)
-    print("  JanSeva AI -- Form Filler (Selenium Debugging Mode)")
+    print("  Saarthi -- Form Filler (Selenium Debugging Mode)")
     print("=" * 60)
 
     # 1. Load Data

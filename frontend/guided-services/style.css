@@ -1,4 +1,4 @@
-/* ===== JanSeva AI Kiosk — Premium UI/UX ===== */
+/* ===== Saarthi Kiosk — Premium UI/UX ===== */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap');
 
 :root {
@@ -479,6 +479,42 @@ body {
   font-weight: 600;
 }
 
+.guided-state-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: -12px 0 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.guided-state-picker select {
+  min-width: 130px;
+  padding: 9px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--primary);
+  font: inherit;
+}
+
+.empty-service-message {
+  grid-column: 1 / -1;
+  padding: 24px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .guided-state-picker, .reference-heading { align-items: stretch; flex-direction: column; }
+  .guided-state-picker { justify-content: flex-start; }
+  .reference-close { align-self: flex-start; }
+}
+
 /* ===== Checklist ===== */
 .checklist-meta {
   display: grid;
@@ -706,7 +742,8 @@ body {
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
   padding: 12px 14px;
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
@@ -719,7 +756,8 @@ body {
 }
 
 .form-group input:focus,
-.form-group select:focus {
+.form-group select:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(255, 153, 51, 0.15);
@@ -728,6 +766,38 @@ body {
 .form-group input::placeholder {
   color: var(--text-muted);
 }
+
+.missing-info-section {
+  margin: 18px 0 24px;
+  padding: 20px;
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+}
+
+.choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choice-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 13px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.choice-option input {
+  width: auto;
+}
+
+.form-group small { display: block; margin-top: 5px; color: var(--text-secondary); font-size: 12px; }
 
 /* Checkbox/toggle rows */
 .toggle-grid {
@@ -1094,4 +1164,3 @@ body {
 .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--bg); }
 .btn-block { width: 100%; }
-

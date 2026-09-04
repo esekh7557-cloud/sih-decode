@@ -1,4 +1,4 @@
-/* ===== JanSeva AI Kiosk — Premium UI/UX ===== */
+/* ===== Saarthi Kiosk — Premium UI/UX ===== */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap');
 
 :root {
@@ -1094,4 +1094,3 @@ body {
 .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--bg); }
 .btn-block { width: 100%; }
-

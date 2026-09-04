@@ -281,7 +281,7 @@ def generate_autofill_bookmarklet(user_data: dict) -> str:
   const delay = ms => new Promise(res => setTimeout(res, ms));
 
   let filledCount = 0;
-  console.log("--- JanSeva AI Auto-fill Starting ---");
+  console.log("--- Saarthi Auto-fill Starting ---");
   for (const [key, labelTexts] of Object.entries(labelMapping)) {{
     if (data[key] === undefined || data[key] === null || data[key] === '') continue;
     
@@ -385,7 +385,7 @@ def generate_autofill_bookmarklet(user_data: dict) -> str:
   // Clicking it too fast via JavaScript interrupts Wicket's background Ajax calls, 
   // which corrupts the application state and causes the Document Upload to fail!
   
-  alert("JanSeva AI Auto-fill Complete!\\nFilled " + filledCount + " fields.\\n\\nPLEASE WAIT 3 SECONDS before manually clicking 'Save & Proceed' to allow the server to register the data.");
+  alert("Saarthi Auto-fill Complete!\\nFilled " + filledCount + " fields.\\n\\nPLEASE WAIT 3 SECONDS before manually clicking 'Save & Proceed' to allow the server to register the data.");
 }})();
 '''
     return bookmarklet

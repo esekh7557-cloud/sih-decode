@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>JanSeva AI — Digital Citizen Assistant Kiosk</title>
+  <title>Saarthi — Digital Citizen Assistant Kiosk</title>
   <meta name="description" content="Free public kiosk assistant for government offices. Get certificates and discover welfare schemes you qualify for — no middlemen needed." />
-  <link rel="stylesheet" href="/style.css?v=20260902" />
+  <link rel="stylesheet" href="/guided-services/style.css?v=20260904" />
 </head>
 <body>
 
@@ -14,7 +14,7 @@
     <div class="header-brand">
       <span class="logo">🏛️</span>
       <div>
-        <h1>JanSeva AI</h1>
+        <h1>Saarthi</h1>
         <div class="subtitle">Digital Citizen Assistant Kiosk</div>
       </div>
     </div>
@@ -65,10 +65,19 @@
         <div class="card-title">Select a Service</div>
         <div class="card-subtitle">आप कौन सा प्रमाणपत्र बनवाना चाहते हैं?</div>
         
+        <div class="guided-state-picker">
+          <label for="guided-state-select">State</label>
+          <select id="guided-state-select" onchange="changeGuidedState(this.value)">
+            <option value="Goa">Goa</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
         <div id="service-grid" class="service-grid">
           <!-- Populated dynamically via JS -->
           <div class="spinner"></div>
         </div>
+
       </div>
     </section>
 
@@ -181,9 +190,20 @@
             <div class="btn-group" style="margin-top: 20px;">
               <button class="btn btn-secondary" onclick="performScan()">🔄 Re-extract</button>
               <button class="btn btn-success" onclick="confirmScan()">
-                ✅ Auto-Fill Form & Continue ➔
+                ✅ Use Demo Data to Auto-Fill ➔
               </button>
             </div>
+
+            <section id="demo-question-section" class="missing-info-section" hidden>
+              <div class="card-title" style="font-size: 20px;">One detail is needed</div>
+              <p id="demo-question-copy" class="card-subtitle"></p>
+              <form id="demo-question-form" onsubmit="event.preventDefault(); continueDemoQuestion();">
+                <div id="demo-question-field" class="form-grid"></div>
+                <button id="demo-question-next" type="submit" class="btn btn-primary" style="margin-top: 20px;">
+                  Next question →
+                </button>
+              </form>
+            </section>
           </div>
         </div>
       </div>
@@ -195,7 +215,20 @@
         <div class="card-title">📝 Your Details</div>
         <div class="card-subtitle">अपनी जानकारी भरें / Fill in your details</div>
 
-        <form id="fill-form" onsubmit="event.preventDefault(); submitProfile();">
+        <section id="missing-info-section" class="missing-info-section" hidden>
+          <div class="card-title" style="font-size: 20px;">A few details are still needed</div>
+          <p id="missing-info-copy" class="card-subtitle">
+            I extracted what I could from your documents. Please answer the remaining questions below.
+          </p>
+          <form id="missing-info-form" onsubmit="event.preventDefault(); continueFromMissingInfo();">
+            <div id="missing-info-fields" class="form-grid"></div>
+            <button id="missing-info-next" type="submit" class="btn btn-primary" style="margin-top: 20px;">
+              Continue to review the complete form →
+            </button>
+          </form>
+        </section>
+
+        <form id="fill-form" onsubmit="event.preventDefault(); submitProfile();" hidden>
           <div class="form-grid">
 
             <div class="form-group">
@@ -325,7 +358,7 @@
             </div>
             <div class="form-group">
               <label for="f-purpose">Purpose</label>
-              <input id="f-purpose" type="text" placeholder="e.g. Mediclaim" />
+              <input id="f-purpose" type="text" placeholder="Enter the purpose shown on the official form" />
             </div>
             <div class="form-group">
               <label for="f-residence_period">Residence Period (Years)</label>
@@ -521,13 +554,6 @@
             <!-- Populated dynamically -->
           </div>
 
-          <div id="qr-section" style="display: none; margin-top: 24px;">
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
-              Scan QR to download on your phone:
-            </p>
-            <img id="qr-image" alt="Download QR Code" style="width: 150px; height: 150px; border-radius: 8px;" />
-          </div>
-
           <div id="autofill-section" style="margin-top: 28px; text-align: left; background: #f8fafc; border: 2px solid #3b82f6; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);">
             <div style="display: flex; align-items: center; justify-content: space-between;">
               <div style="flex: 1;">
@@ -561,72 +587,6 @@
     </section>
 
     <!-- ─── STEP 5: ADMIN AGENT ─── -->
-    <section class="panel" id="panel-admin">
-      <div class="card">
-        <div class="card-title">🤖 AI Form Assistant</div>
-        <div class="card-subtitle">Automate any online form securely</div>
-        
-        <!-- Step 1: Input URL -->
-        <div id="admin-step-url" class="active" style="text-align: left;">
-            <p style="font-weight: 600; margin-bottom: 10px;">Paste the link of the form you want me to fill out.</p>
-            <div style="display: flex; gap: 10px;">
-                <input type="url" id="admin-form-url" placeholder="https://goaonline.gov.in/App/..." required class="form-control" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border);" />
-                <button id="admin-btn-analyze" class="btn btn-primary" onclick="adminAnalyzeForm()">Analyze Form</button>
-            </div>
-        </div>
-
-        <!-- Step 2: Loading State -->
-        <style>
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-        <div id="admin-step-loading" style="display: none; padding: 40px 0; text-align: center;">
-            <div class="spinner" style="margin: 0 auto 20px; border: 4px solid rgba(0,0,0,0.1); border-left-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
-            <h3 id="admin-loading-text" style="color: var(--primary);">Analyzing the form...</h3>
-            <p style="color: var(--text-secondary);">My AI vision is reading the webpage to understand what is required.</p>
-        </div>
-
-        <!-- Step 3: Dynamic Data Collection -->
-        <div id="admin-step-collect" style="display: none; text-align: left;">
-            <h3 style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary);">Provide Information</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 20px;">I read the form! Please provide the following details so I can fill it for you.</p>
-            
-            <form id="admin-dynamic-form" onsubmit="event.preventDefault(); adminExecuteForm();">
-                <div id="admin-dynamic-fields" class="form-grid">
-                    <!-- Fields injected here via JS -->
-                </div>
-                
-                <h3 style="margin-top: 30px; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary);">Required Documents</h3>
-                <div id="admin-dynamic-docs" class="form-grid">
-                    <!-- Docs injected here via JS -->
-                </div>
-                
-                <div style="margin-top: 30px; display: flex; gap: 10px;">
-                    <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="adminReset()">Cancel</button>
-                    <button type="submit" class="btn btn-success" style="flex: 2;" id="admin-submit-btn">Fill & Submit Form ➔</button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Step 4: Success Result -->
-        <div id="admin-step-success" style="display: none; text-align: center; padding: 30px 0;">
-            <div style="font-size: 60px; margin-bottom: 10px;">✅</div>
-            <h3 style="color: var(--success); margin-bottom: 10px;">Form Submitted Successfully!</h3>
-            <p id="admin-success-message" style="margin-bottom: 20px; color: var(--text-secondary);">The agent has successfully navigated and filled out the form.</p>
-            <div style="display: flex; gap: 10px; justify-content: center;">
-              <button class="btn btn-primary" onclick="adminReset()">Automate Another Form</button>
-              <button class="btn btn-secondary" onclick="showPanel(0)">Back to Home</button>
-            </div>
-        </div>
-        
-        <!-- Step 5: Error Result -->
-        <div id="admin-step-error" style="display: none; text-align: center; padding: 30px 0;">
-            <div style="font-size: 60px; margin-bottom: 10px;">❌</div>
-            <h3 style="color: var(--danger); margin-bottom: 10px;">Something went wrong</h3>
-            <p id="admin-error-message" style="margin-bottom: 20px; color: var(--text-secondary);">An error occurred while communicating with the agent.</p>
-            <button class="btn btn-secondary" onclick="adminReset()">Try Again</button>
-        </div>
-      </div>
-    </section>
 
   </main>
 
@@ -638,7 +598,7 @@
       <span class="green"></span>
     </div>
     <p>
-      🏛️ <strong>JanSeva AI</strong> — Free public service. No middlemen. No fees beyond government charges.
+      🏛️ <strong>Saarthi</strong> — Free public service. No middlemen. No fees beyond government charges.
       <br />
       Privacy: All data is erased after your session ends. Zero personal data is stored.
     </p>
@@ -648,28 +608,6 @@
     🔊
   </button>
 
-  <!-- Admin Auth Modal -->
-  <div id="admin-auth-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-content">
-      <div style="font-size: 40px; margin-bottom: 10px;">🔒</div>
-      <h3>Admin Login</h3>
-      <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">Please enter your credentials to access the AI Agent.</p>
-      <div class="form-group" style="text-align: left; margin-bottom: 15px;">
-        <label>Username</label>
-        <input type="text" id="admin-username" placeholder="Enter username" class="form-control" />
-      </div>
-      <div class="form-group" style="text-align: left; margin-bottom: 20px;">
-        <label>Password</label>
-        <input type="password" id="admin-password" placeholder="Enter password" class="form-control" />
-      </div>
-      <div style="color: red; font-size: 13px; margin-bottom: 15px; display: none;" id="admin-auth-error">Incorrect username or password.</div>
-      <div style="display: flex; gap: 10px;">
-        <button class="btn btn-secondary" style="flex: 1;" onclick="closeAdminAuth()">Cancel</button>
-        <button class="btn btn-primary" style="flex: 1;" onclick="submitAdminAuth()">Login</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="/app.js?v=20260902"></script>
+  <script src="/guided-services/app.js?v=20260904"></script>
 </body>
 </html>

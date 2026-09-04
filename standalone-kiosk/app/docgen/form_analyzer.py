@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 
 def analyze_form(port: int = 9222):
     print("=" * 60)
-    print("  JanSeva AI -- Form Analyzer")
+    print("  Saarthi -- Form Analyzer")
     print("=" * 60)
     print(f"\n[CONNECT] Connecting to Edge on port {port}...")
     

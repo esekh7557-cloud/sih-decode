@@ -21,7 +21,7 @@ load_dotenv()
 
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are a precision OCR and document information extraction AI for the JanSeva portal.
+SYSTEM_PROMPT = """You are a precision OCR and document information extraction AI for the Saarthi portal.
 Analyze the provided document image(s) and any conversation history. Your goal is to extract factual information and fill the following required schema:
 
 {
@@ -188,7 +188,7 @@ async def extract_data_from_images(
                     headers={
                         "Authorization": f"Bearer {key}",
                         "HTTP-Referer": "https://janseva.ai",
-                        "X-Title": "JanSeva Document Extractor"
+                        "X-Title": "Saarthi Document Extractor"
                     },
                     json=payload
                 )

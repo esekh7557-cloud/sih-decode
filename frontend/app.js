@@ -32,7 +32,7 @@ let onboardingRecognition = null;
 let onboardingListening = false;
 const ONBOARDING_STEPS = [
   { key: "language", title: "Choose your language", copy: "Start with your preferred language. You can change it later from the dashboard." },
-  { key: "age", title: "What is your age?", copy: "This helps JanSeva find schemes that match your age group.", type: "number", placeholder: "Enter your age", min: "0", max: "120" },
+  { key: "age", title: "What is your age?", copy: "This helps Saarthi find schemes that match your age group.", type: "number", placeholder: "Enter your age", min: "0", max: "120" },
   { key: "gender", title: "What is your gender?", copy: "Choose the option you are most comfortable sharing.", type: "select", options: [["female", "Female"], ["male", "Male"], ["other", "Other"]] },
   { key: "state", title: "Which state do you live in?", copy: "State information helps us show the right government services.", type: "select", options: [["Goa", "Goa"], ["Maharashtra", "Maharashtra"], ["Gujarat", "Gujarat"], ["Other", "Other"]] },
   { key: "district", title: "Which district do you live in?", copy: "Enter your district as it appears on your official documents.", type: "text", placeholder: "Enter your district" },
@@ -277,7 +277,7 @@ function renderOnboardingStep() {
   if (onboardingStep >= ONBOARDING_STEPS.length) {
     kicker.textContent = "SETUP COMPLETE";
     title.textContent = "Your basic details are ready";
-    copy.textContent = "JanSeva can now personalise scheme matches and government-service guidance for you.";
+    copy.textContent = "Saarthi can now personalise scheme matches and government-service guidance for you.";
     progress.style.width = "100%";
     const summary = document.createElement("div");
     summary.className = "onboarding-summary";
@@ -325,7 +325,7 @@ function renderOnboardingStep() {
     content.appendChild(field);
     const voice = document.createElement("label");
     voice.className = "onboarding-voice";
-    voice.innerHTML = '<input id="onboarding-voice-enabled" type="checkbox" /> <span><strong>Use voice assistance</strong>JanSeva can read guidance aloud and let you answer with your microphone. You can turn this off anytime.</span>';
+    voice.innerHTML = '<input id="onboarding-voice-enabled" type="checkbox" /> <span><strong>Use voice assistance</strong>Saarthi can read guidance aloud and let you answer with your microphone. You can turn this off anytime.</span>';
     voice.querySelector("input").checked = speechEnabled;
     content.appendChild(voice);
     select.addEventListener("change", () => { language = select.value; });
@@ -571,7 +571,7 @@ function addMessage(role, text) {
   const content = document.createElement("div");
   if (role !== "user") {
     const label = document.createElement("strong");
-    label.textContent = "JanSeva Assistant";
+    label.textContent = "Saarthi Assistant";
     content.appendChild(label);
   }
   const message = document.createElement("p");
@@ -719,7 +719,7 @@ function renderSchemes(schemes) {
   });
 }
 
-function renderLiveGuidance(guidance, applicationServiceId = null) {
+function renderLiveGuidance(guidance, applicationServiceId = null, availableServices = []) {
   const panel = $("#live-guidance");
   const actions = $("#live-guidance-actions");
   if (!guidance) {
@@ -763,6 +763,21 @@ function renderLiveGuidance(guidance, applicationServiceId = null) {
     open.textContent = "Open official site";
     open.addEventListener("click", () => window.open(primarySource.url, "_blank", "noopener,noreferrer"));
     actions.appendChild(open);
+  }
+
+  // The assistant only supplies this id when it matches a service from the
+  // current state catalog. Keep the client-side check as a second guard so
+  // generic live guidance never gets an application button by accident.
+  const knownService = (availableServices || []).some((service) => service.id === applicationServiceId);
+  if (knownService) {
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "primary-button";
+    apply.textContent = "Apply with Saarthi";
+    apply.addEventListener("click", () => {
+      window.location.assign("/guided-services?service=" + encodeURIComponent(applicationServiceId));
+    });
+    actions.appendChild(apply);
   }
 
 }
@@ -1877,7 +1892,7 @@ async function askAssistant(message, { autoApply = false } = {}) {
       addChoiceMessage(result.pending_request.question_options);
     }
     renderSchemes(result.recommendations || []);
-    renderLiveGuidance(result.live_guidance, result.application_service_id);
+    renderLiveGuidance(result.live_guidance, result.application_service_id, result.services);
     if (result.application_service_id && !result.live_guidance) await selectService(result.application_service_id);
     if (result.saved_profile_fields && result.saved_profile_fields.length) {
       showToast("Saved from chat: " + result.saved_profile_fields.join(", ") + ".", "success");
