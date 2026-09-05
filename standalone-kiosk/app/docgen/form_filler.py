@@ -49,7 +49,7 @@ def main():
         # Default data for testing
         data = {
             "certificate_type": "CERT_INC",  # CERT_INC, CERT_CST, CERT_DOM
-            "applying_for": "Self",
+            "applying_for": "",
             "purpose": "economically weaker section",
             "residence_period": "15",
             "title": "Mr.",
@@ -57,12 +57,12 @@ def main():
             "place_of_birth": "Panaji",
             "dob": "15/08/1990",
             "gender": "male",
-            "marital_status": "Married",
+            "marital_status": "",
             "guardian_relation": "Father",
             "father_name": "Ramesh Kumar",  
             "mobile": "9876543210",
             "email": "rahul.sharma@example.com",
-            "occupation": "employed", 
+            "occupation": "", 
             "caste_category": "GENERAL",
             "address": "Flat 4B, Sunshine Apartments",
             "locality": "Market Area",

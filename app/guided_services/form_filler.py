@@ -15,7 +15,7 @@ from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertP
 
 DEFAULT_FORM_DATA: dict[str, Any] = {
     "certificate_type": "CERT_INC",
-    "applying_for": "Self",
+    "applying_for": "",
     "purpose": "economically weaker section",
     "residence_period": "15",
     "title": "Mr.",
@@ -23,12 +23,12 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "place_of_birth": "Asilo Hospital, Mapusa, Goa",
     "dob": "15/08/1998",
     "gender": "male",
-    "marital_status": "Married",
+    "marital_status": "",
     "guardian_relation": "Father",
     "father_name": "Devidas vithal Naik",
     "mobile": "9876543210",
     "email": "Devidas.naik@gmail.com",
-    "occupation": "employed",
+    "occupation": "",
     "employment_details": "Private employment, Panaji",
     "caste_category": "GENERAL",
     "address": "Flat 4B, Sunshine Apartments",
