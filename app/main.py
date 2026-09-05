@@ -415,10 +415,13 @@ def _canonical_scan_filename(expected_type: str | None, file_name: str) -> str:
         "passportsizephotograph": "photograph",
         "incomecertificate": "incomecertificate",
         "residencecertificate": "residencecertificate",
+        "residenceproof": "residencecertificate",
         "castecertificate": "castecertificate",
         "rationcard": "rationcard",
         "electricitybill": "electricitybill",
         "affidavit": "affidavit",
+        "affidavitonstamppaper": "affidavit",
+        "affidavitonastamppaper": "affidavit",
         "selfdeclaration": "selfdeclaration",
     }
     basename = names.get(normalized)

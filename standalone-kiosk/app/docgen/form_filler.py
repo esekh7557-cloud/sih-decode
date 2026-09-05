@@ -84,7 +84,7 @@ def main():
             "ration_card": "RC1234567",
             "property_details": "None",
             "id_proof_type": "aadhaar card", 
-            "id_proof_no": "673720425369",
+            "id_proof_no": "123456789012",
             "certify": "yes",
             "family_members": []
         }

@@ -41,6 +41,10 @@ const ONBOARDING_STEPS = [
   { key: "caste_category", title: "What is your social category?", copy: "This helps improve scheme matches. Choose the option shown on your official documents.", type: "select", options: [["GENERAL", "General"], ["SC", "SC"], ["ST", "ST"], ["OBC", "OBC"], ["NT", "NT"], ["VJNT", "VJNT"], ["SBC", "SBC"], ["MINORITY", "Minority"]] },
 ];
 const DOCUMENT_TYPES = [
+  "Affidavit on stamp paper",
+  "Age Proof",
+  "Identity Proof",
+  "Residence Proof",
   "Aadhaar Card",
   "PAN Card",
   "Voter ID Card",
@@ -955,7 +959,9 @@ function renderDocumentUploadStep(container, plan = null) {
       await ensureDocumentsReadyForPortal();
       await api("/sessions/" + sessionId + "/automate_upload", "POST");
       const result = await waitForDocumentUploadResult();
-      showToast((result.uploaded || 0) + " document(s) uploaded. Review the portal, then submit the application yourself.", "success");
+      const skipped = result.skipped || 0;
+      const skippedNote = skipped ? " " + skipped + " document(s) were already attached or not requested by this portal form." : "";
+      showToast((result.uploaded || 0) + " document(s) uploaded." + skippedNote + " Review the portal, then submit the application yourself.", "success");
       const finalNote = document.createElement("p");
       finalNote.className = "final-submission-note";
       finalNote.textContent = "Final step: verify the uploaded files, submit the application yourself on the official portal, and complete any payment yourself if the portal requests a fee. Saarthi never handles payment credentials or final submission.";
@@ -971,7 +977,7 @@ function renderDocumentUploadStep(container, plan = null) {
         showToast("Review the filled form and complete any payment yourself on the official portal.", "info");
       });
       step.append(finalNote, finalAction);
-      upload.textContent = "Documents uploaded";
+      upload.textContent = skipped ? "Documents uploaded (some not requested)" : "Documents uploaded";
     } catch (error) {
       upload.disabled = false;
       upload.textContent = "I reviewed the form — upload documents";
@@ -992,7 +998,8 @@ async function waitForDocumentUploadResult() {
     const result = job.result || {};
     if (result.failed) {
       const names = (result.failed_documents || []).join(", ");
-      throw new Error(result.failed + " document(s) could not be uploaded" + (names ? ": " + names : "") + ". Open the portal upload page and try again.");
+      const details = Object.values(result.failure_details || {}).join(" ");
+      throw new Error(result.failed + " document(s) could not be uploaded" + (names ? ": " + names : "") + (details ? ". " + details : "") + " Open the portal upload page and try again.");
     }
     if (!result.uploaded) throw new Error("No documents were uploaded. Open the portal's document-upload page and try again.");
     return result;

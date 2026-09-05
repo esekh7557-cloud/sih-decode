@@ -299,14 +299,23 @@ def guided_automate_upload(sid: str):
     from app.guided_services.document_uploader import (
         _matching_documents,
         document_source_directory,
+        missing_required_sections,
         upload_documents,
     )
 
     source_dir = document_source_directory(sid)
-    if not _matching_documents(source_dir):
+    matches = _matching_documents(source_dir)
+    if not matches:
         raise HTTPException(
             400,
             f"No recognised documents are available in {source_dir}. Add a JPG, PNG, WEBP, or PDF document and try again.",
+        )
+    missing_sections = missing_required_sections(matches)
+    if missing_sections:
+        raise HTTPException(
+            400,
+            "Add at least one document for each required section before uploading: "
+            + ", ".join(missing_sections),
         )
 
     with _UPLOAD_JOBS_LOCK:

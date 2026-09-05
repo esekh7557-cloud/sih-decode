@@ -1506,9 +1506,11 @@ async function waitForUploadResult() {
     const result = job.result || {};
     if (result.failed) {
       const names = (result.failed_documents || []).join(', ');
-      throw new Error(`${result.failed} document(s) could not be uploaded${names ? `: ${names}` : ''}. Open the portal upload page and try again.`);
+      const details = Object.values(result.failure_details || {}).join(' ');
+      throw new Error(`${result.failed} document(s) could not be uploaded${names ? `: ${names}` : ''}${details ? `. ${details}` : ''}. Open the portal upload page and try again.`);
     }
-    toast(`${result.uploaded || 0} document(s) uploaded successfully. Review them in the portal before submitting.`, 'success');
+    const skipped = result.skipped || 0;
+    toast(`${result.uploaded || 0} document(s) uploaded successfully${skipped ? `; ${skipped} were already attached or not requested by this portal form` : ''}. Review them in the portal before submitting.`, 'success');
     return;
   }
   throw new Error('Upload is still running. Check the browser and try again after it finishes.');

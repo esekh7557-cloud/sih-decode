@@ -53,11 +53,17 @@ def test_dashboard_upload_uses_the_guided_services_automation(monkeypatch):
     session_id = client.post("/sessions").json()["session_id"]
     monkeypatch.setattr(
         "app.guided_services.document_uploader._matching_documents",
-        lambda _: [("Aadhaar Card", "C:/scans/aadharcard.jpg")],
+        lambda _: [
+            ("Affidavit", "C:/scans/affidavit.pdf"),
+            ("Birth Certificate", "C:/scans/birthcertificate.jpg"),
+            ("Aadhaar Card", "C:/scans/aadharcard.jpg"),
+            ("Photograph", "C:/scans/photograph.jpg"),
+            ("Electricity Bill", "C:/scans/electricitybill.pdf"),
+        ],
     )
     monkeypatch.setattr(
         "app.guided_services.document_uploader.upload_documents",
-        lambda *_: {"found": 1, "uploaded": 1, "failed": 0, "failed_documents": []},
+        lambda *_: {"found": 5, "uploaded": 5, "failed": 0, "failed_documents": []},
     )
 
     response = client.post(f"/sessions/{session_id}/automate_upload")
@@ -68,6 +74,21 @@ def test_dashboard_upload_uses_the_guided_services_automation(monkeypatch):
     assert client.post("/guided-services/sessions/missing/automate_upload").status_code == 404
     assert client.post("/guided-services/api/analyze-form").status_code == 404
     assert client.post("/guided-services/api/execute-form").status_code == 404
+
+
+def test_upload_requires_one_document_for_each_required_section(monkeypatch):
+    client = TestClient(main.app)
+    session_id = client.post("/sessions").json()["session_id"]
+    monkeypatch.setattr(
+        "app.guided_services.document_uploader._matching_documents",
+        lambda _: [("Aadhaar Card", "C:/scans/aadharcard.jpg")],
+    )
+
+    response = client.post(f"/sessions/{session_id}/automate_upload")
+
+    assert response.status_code == 400
+    assert "Affidavit on stamp paper" in response.json()["detail"]
+    assert "Residence Proof" in response.json()["detail"]
 
 
 def test_dashboard_launches_the_debug_browser_used_by_upload(monkeypatch):
