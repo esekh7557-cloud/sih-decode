@@ -59,7 +59,7 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "where_to_submit": "Taluka Office",
     "residence_certificate_period": "Since",
     "residence_months": "0",
-    "house_no": "15",
+    "house_no": "",
     "rented_owned": "Owned",
     "currently_staying": "Yes",
     "period_of_stay": "Since",
@@ -594,22 +594,23 @@ def fill_form(
     print("\n[DONE] Finished auto-filling form via Native Selenium!")
     print("\n[WAIT] Waiting 4 seconds for page to transition to Document Upload...")
     time.sleep(4.0)
-    
-    if session_id:
-        print("\n[LAUNCH] Automatically uploading this session's scanned documents...")
-        from pathlib import Path
-        from app.guided_services.document_uploader import upload_documents
 
-        scan_folder = Path.cwd() / "scans" / session_id
-        if not scan_folder.is_dir():
-            print("[INFO] No scanned documents exist for this session; document upload skipped.")
+    if session_id:
+        print("\n[LAUNCH] Automatically uploading available documents...")
+        from app.guided_services.document_uploader import (
+            _matching_documents,
+            document_source_directory,
+            upload_documents,
+        )
+
+        source_dir = document_source_directory(session_id)
+        if not _matching_documents(source_dir):
+            print(f"[INFO] No recognised documents found in: {source_dir}")
         else:
             try:
-                upload_documents(scan_folder, port)
+                upload_documents(source_dir, port)
             except Exception as exc:
                 print(f"[WARN] Document upload could not start: {exc}")
-    else:
-        print("\n[INFO] No Saarthi session was provided, so document upload was skipped.")
 
 
 def main():

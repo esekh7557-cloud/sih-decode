@@ -296,13 +296,17 @@ def guided_automate_fill(sid: str, body: FormFillIn):
 @router.post("/sessions/{sid}/automate_upload")
 def guided_automate_upload(sid: str):
     _main()._session(sid)
-    from app.guided_services.document_uploader import _matching_documents, upload_documents
+    from app.guided_services.document_uploader import (
+        _matching_documents,
+        document_source_directory,
+        upload_documents,
+    )
 
-    scan_dir = str(Path.cwd() / "scans" / sid)
-    if not _matching_documents(Path(scan_dir)):
+    source_dir = document_source_directory(sid)
+    if not _matching_documents(source_dir):
         raise HTTPException(
             400,
-            "No recognised scanned documents are available. Add and extract a labelled document before uploading.",
+            f"No recognised documents are available in {source_dir}. Add a JPG, PNG, WEBP, or PDF document and try again.",
         )
 
     with _UPLOAD_JOBS_LOCK:
@@ -313,7 +317,7 @@ def guided_automate_upload(sid: str):
 
     def run_upload():
         try:
-            result = upload_documents(scan_dir, 9222)
+            result = upload_documents(source_dir, 9222)
             with _UPLOAD_JOBS_LOCK:
                 _UPLOAD_JOBS[sid] = {"status": "completed", "result": result, "error": None}
         except Exception as exc:

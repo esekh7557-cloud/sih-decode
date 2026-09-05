@@ -952,6 +952,7 @@ function renderDocumentUploadStep(container, plan = null) {
     upload.disabled = true;
     upload.textContent = "Uploading scanned documents...";
     try {
+      await ensureDocumentsReadyForPortal();
       await api("/sessions/" + sessionId + "/automate_upload", "POST");
       const result = await waitForDocumentUploadResult();
       showToast((result.uploaded || 0) + " document(s) uploaded. Review the portal, then submit the application yourself.", "success");
@@ -1835,6 +1836,7 @@ async function extractDocuments() {
           document_types: documentTypes,
           images: [{ name: item.file.name, data: await readFileAsDataUrl(item.file) }],
         });
+        item.savedForPortal = true;
         applyExtractedFields(result.summary || {});
         Object.assign(savedProfileData, result.summary || {});
         renderSavedProfileData();
@@ -1873,6 +1875,15 @@ async function extractDocuments() {
   } finally {
     button.disabled = selectedFiles.length === 0;
     button.textContent = "Extract labelled documents";
+  }
+}
+
+async function ensureDocumentsReadyForPortal() {
+  const unsaved = selectedFiles.filter((item) => !item.savedForPortal);
+  if (!unsaved.length) return;
+  await extractDocuments();
+  if (selectedFiles.some((item) => !item.savedForPortal)) {
+    throw new Error("Some documents could not be saved for portal upload. Check their labels and try again.");
   }
 }
 

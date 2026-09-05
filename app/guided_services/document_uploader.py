@@ -7,6 +7,24 @@ import sys
 import time
 from pathlib import Path
 
+
+def document_source_directory(session_id: str | None = None) -> Path:
+    """Choose the configured document library before session-only scans.
+
+    ``JANSEVA_DOCUMENT_SOURCE_DIR`` is the portable override.  For the local
+    kiosk setup, the citizen's shared OneDrive document folder is detected so
+    documents selected before a session remain available after form filling.
+    """
+    configured = os.getenv("JANSEVA_DOCUMENT_SOURCE_DIR")
+    if configured:
+        return Path(configured).expanduser()
+
+    shared_library = Path.home() / "OneDrive" / "Pictures" / "doc"
+    if shared_library.is_dir():
+        return shared_library
+
+    return Path.cwd() / "scans" / (session_id or "")
+
 # -- Document category mapping ------------------------------------------------
 DOCUMENT_MAP = {
     # Age Proof
@@ -76,7 +94,34 @@ _PORTAL_ROW_ALIASES = {
 
 def _document_label_for_filename(file_path: Path) -> str | None:
     stem = "".join(character for character in file_path.stem.lower() if character.isalnum())
-    return _FILENAME_LABELS.get(stem)
+    exact_match = _FILENAME_LABELS.get(stem)
+    if exact_match:
+        return exact_match
+
+    # Citizens commonly add descriptive text such as "PAN card - ID proof"
+    # or "Affidavit on a stamp paper".  Match these safely to their portal
+    # category instead of requiring a filename rename.
+    for token, label in (
+        ("birthcertificate", "Birth Certificate"),
+        ("aadhar", "Aadhaar Card"),
+        ("aadhaar", "Aadhaar Card"),
+        ("pancard", "PAN Card"),
+        ("voter", "Voter ID"),
+        ("passport", "Passport"),
+        ("ration", "Ration Card"),
+        ("electricity", "Electricity Bill"),
+        ("residence", "Residence Certificate"),
+        ("domicile", "Residence Certificate"),
+        ("photograph", "Photograph"),
+        ("photo", "Photograph"),
+        ("income", "Income Certificate"),
+        ("caste", "Caste Certificate"),
+        ("affidavit", "Affidavit"),
+        ("selfdeclaration", "Self Declaration"),
+    ):
+        if token in stem:
+            return label
+    return None
 
 
 def _portal_row_aliases(label: str) -> tuple[str, ...]:
