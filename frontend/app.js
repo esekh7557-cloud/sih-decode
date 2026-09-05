@@ -53,6 +53,27 @@ const DOCUMENT_TYPES = [
   "Other Document",
 ];
 
+// A single file can be valid evidence for more than one requirement (for
+// example, an Aadhaar card may be used as both identity and address proof).
+// Keep those assignments on the file instead of asking the citizen to upload
+// the same image again.
+function documentTypesFor(item) {
+  const types = Array.isArray(item.documentTypes)
+    ? item.documentTypes
+    : (item.documentType ? [item.documentType] : []);
+  return Array.from(new Set(types.filter(Boolean)));
+}
+
+function setDocumentTypes(item, types) {
+  item.documentTypes = Array.from(new Set(types.filter(Boolean)));
+  // Retain the primary type for older draft data and existing integrations.
+  item.documentType = item.documentTypes[0] || "";
+}
+
+function allSelectedDocumentTypes() {
+  return selectedFiles.flatMap(documentTypesFor);
+}
+
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, method = "GET", body = null) {
@@ -1039,6 +1060,7 @@ async function persistApplicationDraft() {
       name: item.file.name,
       type: item.file.type,
       documentType: item.documentType || "",
+      documentTypes: documentTypesFor(item),
       data: await readFileAsDataUrl(item.file),
     })));
     sessionStorage.setItem(APPLICATION_DRAFT_STORAGE_KEY, JSON.stringify(draft));
@@ -1134,7 +1156,7 @@ function renderSaarthiApplication(plan) {
   docTitle.textContent = noPortalUpload ? "1. Supporting documents" : "1. Required documents";
   const docList = document.createElement("ul");
   const knownTypes = Array.from(new Set(
-    (plan.uploaded_document_types || []).concat(selectedFiles.map((item) => item.documentType)).filter(Boolean)
+    (plan.uploaded_document_types || []).concat(allSelectedDocumentTypes()).filter(Boolean)
   ));
   (plan.documents || []).forEach((documentName) => {
     const item = document.createElement("li");
@@ -1339,7 +1361,7 @@ function appendLiveApplicationDocuments(flow, plan) {
   title.textContent = "1. Required documents";
   const list = document.createElement("ul");
   const knownTypes = Array.from(new Set(
-    (plan.uploaded_document_types || []).concat(selectedFiles.map((item) => item.documentType)).filter(Boolean)
+    (plan.uploaded_document_types || []).concat(allSelectedDocumentTypes()).filter(Boolean)
   ));
   (plan.documents || []).forEach((documentName) => {
     const item = document.createElement("li");
@@ -1670,23 +1692,28 @@ function renderDocuments() {
     const size = document.createElement("small");
     size.textContent = Math.max(1, Math.round(file.file.size / 1024)) + " KB";
     info.append(name, size);
-    const type = document.createElement("select");
-    type.className = "document-type-select";
-    type.setAttribute("aria-label", "Document type for " + file.file.name);
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = "Select document type";
-    type.appendChild(placeholder);
+    const assignments = document.createElement("fieldset");
+    assignments.className = "document-type-options";
+    const legend = document.createElement("legend");
+    legend.textContent = SaarthiI18n.t("documentUses");
+    assignments.appendChild(legend);
     const documentChoices = Array.from(new Set(requiredApplicationDocuments.concat(DOCUMENT_TYPES)));
     documentChoices.forEach((documentType) => {
-      const option = document.createElement("option");
-      option.value = documentType;
-      option.textContent = documentType;
-      option.selected = file.documentType === documentType;
-      type.appendChild(option);
-    });
-    type.addEventListener("change", (event) => {
-      selectedFiles[index].documentType = event.target.value;
+      const choice = document.createElement("label");
+      choice.className = "document-type-choice";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = documentType;
+      checkbox.checked = documentTypesFor(file).includes(documentType);
+      checkbox.addEventListener("change", () => {
+        const selected = Array.from(assignments.querySelectorAll("input:checked"))
+          .map((input) => input.value);
+        setDocumentTypes(selectedFiles[index], selected);
+      });
+      const text = document.createElement("span");
+      text.textContent = documentType;
+      choice.append(checkbox, text);
+      assignments.appendChild(choice);
     });
     const remove = document.createElement("button");
     remove.className = "remove-document";
@@ -1697,7 +1724,7 @@ function renderDocuments() {
       selectedFiles.splice(index, 1);
       renderDocuments();
     });
-    item.append(info, type, remove);
+    item.append(info, assignments, remove);
     list.appendChild(item);
   });
 }
@@ -1768,26 +1795,28 @@ async function extractDocuments() {
   button.textContent = "Extracting documents...";
   $("#scan-status").textContent = "Preparing labelled document extraction...";
   try {
-    const unlabelled = selectedFiles.filter((item) => !item.documentType);
+    const unlabelled = selectedFiles.filter((item) => documentTypesFor(item).length === 0);
     if (unlabelled.length) {
-      throw new Error("Select the document type for every uploaded file before extracting.");
+      throw new Error("Choose at least one use for every uploaded file before extracting.");
     }
 
     let extractedCount = 0;
     const errors = [];
     for (let index = 0; index < selectedFiles.length; index += 1) {
       const item = selectedFiles[index];
-      $("#scan-status").textContent = "Extracting " + (index + 1) + " of " + selectedFiles.length + ": " + item.documentType;
+      const documentTypes = documentTypesFor(item);
+      $("#scan-status").textContent = "Extracting " + (index + 1) + " of " + selectedFiles.length + ": " + documentTypes.join(", ");
       try {
         const result = await api("/sessions/" + sessionId + "/scan", "POST", {
-          expected_type: item.documentType,
+          expected_type: documentTypes[0],
+          document_types: documentTypes,
           images: [{ name: item.file.name, data: await readFileAsDataUrl(item.file) }],
         });
         applyExtractedFields(result.summary || {});
         Object.assign(savedProfileData, result.summary || {});
         renderSavedProfileData();
         if (result.extra_fields && Object.keys(result.extra_fields).length) {
-          additionalDocumentData.push({ documentType: item.documentType, fields: result.extra_fields });
+          additionalDocumentData.push({ documentType: documentTypes.join(", "), fields: result.extra_fields });
           renderAdditionalDocumentData();
         }
         extractedCount += 1;
@@ -2071,7 +2100,7 @@ function bindEvents() {
   $("#profile-form").addEventListener("input", updateReadiness);
   $("#document-input").addEventListener("change", (event) => {
     selectedFiles = selectedFiles.concat(
-      Array.from(event.target.files || []).map((file) => ({ file, documentType: "" }))
+      Array.from(event.target.files || []).map((file) => ({ file, documentType: "", documentTypes: [] }))
     );
     event.target.value = "";
     renderDocuments();

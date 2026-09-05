@@ -30,11 +30,17 @@ def test_scan_handles_numeric_aadhaar_from_model(monkeypatch):
 
     response = client.post(
         f"/sessions/{session_id}/scan",
-        json={"expected_type": "Aadhaar Card", "images": []},
+        json={
+            "expected_type": "Aadhaar Card",
+            "document_types": ["Aadhaar Card", "Identity Proof"],
+            "images": [],
+        },
     )
 
     assert response.status_code == 200
     assert response.json()["summary"]["aadhaar"] == "XXXX XXXX " + aadhaar[-4:]
+    saved_types = {item["document_type"] for item in main.store.get(session_id).document_extractions}
+    assert saved_types == {"Aadhaar Card", "Identity Proof"}
 
 
 def test_mock_extraction_mode_does_not_call_openrouter(monkeypatch):

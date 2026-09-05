@@ -435,7 +435,10 @@ input:focus, select:focus, textarea:focus { border-color: #7796ef; box-shadow: 0
 .document-item strong, .document-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .document-item strong { font-size: 12px; }
 .document-item small { margin-top: 3px; color: #8290a6; font-size: 11px; }
-.document-type-select { width: 145px; padding: 7px 26px 7px 8px; color: #43536f; border-color: #d5dfec; background: #fff; font-size: 11px; font-weight: 650; }
+.document-type-options { display: flex; flex-wrap: wrap; gap: 5px 8px; max-width: 290px; margin: 0; padding: 6px 8px; border: 1px solid #d5dfec; border-radius: 8px; background: #fff; }
+.document-type-options legend { width: 100%; padding: 0; color: #63738d; font-size: 10px; font-weight: 750; }
+.document-type-choice { display: inline-flex; align-items: center; gap: 4px; color: #43536f; font-size: 11px; line-height: 1.25; cursor: pointer; }
+.document-type-choice input { width: auto; min-height: auto; margin: 0; }
 .remove-document { padding: 3px 6px; color: var(--danger); border: 0; background: transparent; font-size: 14px; }
 .helper-text { margin-top: 9px; line-height: 1.45; }
 .additional-data { margin: 13px 0; padding: 11px; border: 1px solid #e2e8f2; border-radius: 10px; background: #fbfcfe; }
@@ -605,7 +608,7 @@ footer span:first-child { color: #53647e; font-weight: 800; }
   .language-select { width: 100%; }
   .profile-form { grid-template-columns: 1fr; }
   .document-item { align-items: flex-start; flex-wrap: wrap; }
-  .document-type-select { width: calc(100% - 30px); margin-left: auto; }
+  .document-type-options { width: calc(100% - 30px); max-width: none; margin-left: auto; }
   .panel, .compact-panel { padding: 18px; }
   .chat-composer { flex-direction: column; }
   .chat-composer .primary-button { width: 100%; }

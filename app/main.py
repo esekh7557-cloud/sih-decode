@@ -29,7 +29,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Union, Any
 
 from app.core.profile import mask_aadhaar, validate_mobile
@@ -380,6 +380,7 @@ class ImageItem(BaseModel):
 
 class ScanIn(BaseModel):
     expected_type: Optional[str] = None
+    document_types: List[str] = Field(default_factory=list)
     images: Optional[List[Union[str, ImageItem, Dict[str, Any]]]] = None
 
 
@@ -546,11 +547,17 @@ async def scan(sid: str, body: ScanIn):
         for key, value in fields.items()
         if key not in profile_fields and key not in ignored_extraction_fields and key != "aadhaar"
     }
-    s.document_extractions.append(
+    document_types = list(dict.fromkeys(
+        document_type.strip()
+        for document_type in [body.expected_type or "Document", *body.document_types]
+        if document_type and document_type.strip()
+    ))
+    s.document_extractions.extend(
         {
-            "document_type": body.expected_type or "Document",
+            "document_type": document_type,
             "fields": extra_fields,
         }
+        for document_type in document_types
     )
                 
     if result.image_path:

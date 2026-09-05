@@ -18,6 +18,18 @@ let requiredApplicationDocuments = [];
 let savedExtractedData = {};
 let additionalDocumentData = [];
 
+function documentTypesFor(item) {
+  const types = Array.isArray(item.documentTypes)
+    ? item.documentTypes
+    : (item.documentType ? [item.documentType] : []);
+  return Array.from(new Set(types.filter(Boolean)));
+}
+
+function setDocumentTypes(item, types) {
+  item.documentTypes = Array.from(new Set(types.filter(Boolean)));
+  item.documentType = item.documentTypes[0] || "";
+}
+
 const $ = (selector) => document.querySelector(selector);
 
 function applicationStepUrl(step, plan = applicationPlan) {
@@ -41,6 +53,7 @@ async function persistApplicationDraft() {
       name: item.file.name,
       type: item.file.type,
       documentType: item.documentType || "",
+      documentTypes: documentTypesFor(item),
       data: await readFileAsDataUrl(item.file),
     })));
     sessionStorage.setItem(APPLICATION_DRAFT_STORAGE_KEY, JSON.stringify(draft));
@@ -113,7 +126,7 @@ async function restoreDraftDocuments() {
   try {
     const draft = JSON.parse(raw);
     selectedFiles = (Array.isArray(draft) ? draft : [])
-      .map((item) => ({ file: dataUrlToFile(item), documentType: item.documentType || "" }))
+      .map((item) => ({ file: dataUrlToFile(item), documentType: item.documentType || "", documentTypes: item.documentTypes || [] }))
       .filter((item) => item.file);
   } catch (_) {
     sessionStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY);
@@ -239,28 +252,33 @@ function renderDocuments() {
     const size = document.createElement("small");
     size.textContent = Math.max(1, Math.round(item.file.size / 1024)) + " KB";
     info.append(name, size);
-    const type = document.createElement("select");
-    type.className = "document-type-select";
-    type.setAttribute("aria-label", "Document type for " + item.file.name);
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = "Select document type";
-    type.appendChild(placeholder);
+    const assignments = document.createElement("fieldset");
+    assignments.className = "document-type-options";
+    const legend = document.createElement("legend");
+    legend.textContent = SaarthiI18n.t("documentUses");
+    assignments.appendChild(legend);
     choices.forEach((choice) => {
-      const option = document.createElement("option");
-      option.value = choice;
-      option.textContent = choice;
-      option.selected = item.documentType === choice;
-      type.appendChild(option);
+      const label = document.createElement("label");
+      label.className = "document-type-choice";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = choice;
+      checkbox.checked = documentTypesFor(item).includes(choice);
+      checkbox.addEventListener("change", () => {
+        setDocumentTypes(selectedFiles[index], Array.from(assignments.querySelectorAll("input:checked")).map((input) => input.value));
+      });
+      const text = document.createElement("span");
+      text.textContent = choice;
+      label.append(checkbox, text);
+      assignments.appendChild(label);
     });
-    type.addEventListener("change", (event) => { selectedFiles[index].documentType = event.target.value; });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "remove-document";
     remove.textContent = "x";
     remove.setAttribute("aria-label", "Remove " + item.file.name);
     remove.addEventListener("click", () => { selectedFiles.splice(index, 1); renderDocuments(); });
-    row.append(info, type, remove);
+    row.append(info, assignments, remove);
     list.appendChild(row);
   });
 }
@@ -784,9 +802,9 @@ async function refreshPlanAfterExtraction() {
 async function extractDocuments() {
   if (!selectedFiles.length) return;
   const button = $("#scan-documents-button");
-  const unlabelled = selectedFiles.filter((item) => !item.documentType);
+  const unlabelled = selectedFiles.filter((item) => documentTypesFor(item).length === 0);
   if (unlabelled.length) {
-    showAlert("Select a document type for every uploaded file before extracting.", "info");
+    showAlert("Choose at least one use for every uploaded file before extracting.", "info");
     return;
   }
   button.disabled = true;
@@ -795,10 +813,12 @@ async function extractDocuments() {
   try {
     for (let index = 0; index < selectedFiles.length; index += 1) {
       const item = selectedFiles[index];
-      $("#scan-status").textContent = "Extracting " + (index + 1) + " of " + selectedFiles.length + ": " + item.documentType;
+      const documentTypes = documentTypesFor(item);
+      $("#scan-status").textContent = "Extracting " + (index + 1) + " of " + selectedFiles.length + ": " + documentTypes.join(", ");
       try {
         const result = await api("/sessions/" + sessionId + "/scan", "POST", {
-          expected_type: item.documentType,
+          expected_type: documentTypes[0],
+          document_types: documentTypes,
           images: [{ name: item.file.name, data: await readFileAsDataUrl(item.file) }],
         });
         if (result.action === "ask") {
@@ -807,7 +827,7 @@ async function extractDocuments() {
         }
         Object.assign(savedExtractedData, result.summary || {});
         if (result.extra_fields && Object.keys(result.extra_fields).length) {
-          additionalDocumentData.push({ documentType: item.documentType, fields: result.extra_fields });
+          additionalDocumentData.push({ documentType: documentTypes.join(", "), fields: result.extra_fields });
         }
         extractedCount += 1;
       } catch (_) {
@@ -876,7 +896,7 @@ async function initialise() {
 }
 
 $("#document-input").addEventListener("change", (event) => {
-  selectedFiles = selectedFiles.concat(Array.from(event.target.files || []).map((file) => ({ file, documentType: "" })));
+  selectedFiles = selectedFiles.concat(Array.from(event.target.files || []).map((file) => ({ file, documentType: "", documentTypes: [] })));
   event.target.value = "";
   renderDocuments();
 });

@@ -109,6 +109,7 @@ class ImageItem(BaseModel):
 
 class ScanIn(BaseModel):
     expected_type: Optional[str] = None
+    document_types: List[str] = Field(default_factory=list)
     images: Optional[List[Union[str, ImageItem, Dict[str, Any]]]] = None
 
 
