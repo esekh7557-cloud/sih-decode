@@ -28,7 +28,7 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "father_name": "Devidas vithal Naik",
     "mobile": "9876543210",
     "email": "Devidas.naik@gmail.com",
-    "occupation": "",
+    "occupation": "employed",
     "employment_details": "Private employment, Panaji",
     "caste_category": "GENERAL",
     "address": "Flat 4B, Sunshine Apartments",
@@ -59,7 +59,7 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "where_to_submit": "Taluka Office",
     "residence_certificate_period": "Since",
     "residence_months": "0",
-    "house_no": "",
+    "house_no": "15",
     "rented_owned": "Owned",
     "currently_staying": "Yes",
     "period_of_stay": "Since",
@@ -68,6 +68,10 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "apply_to_concerned_office": "Yes",
     "voter_id_no": "EPIC1234567",
 }
+
+# Fixed monthly income used for the Income Certificate portal's mandatory
+# “Add New” family-member entry.
+INCOME_FAMILY_MEMBER_MONTHLY_INCOME = "25000"
 
 _CERTIFICATE_CODES = {
     "income_certificate": "CERT_INC",
@@ -523,7 +527,7 @@ def fill_form(
             fill_modal_field('relationship', 'select', 'Self')
             fill_modal_field('occupation', 'text', 'Employed') # Changed to text
             fill_modal_field('is_earning', 'select', 'Yes')
-            fill_modal_field('income', 'text', '20000')
+            fill_modal_field('income', 'text', INCOME_FAMILY_MEMBER_MONTHLY_INCOME)
             
             add_btn = get_modal_element('add_btn')
             if add_btn:

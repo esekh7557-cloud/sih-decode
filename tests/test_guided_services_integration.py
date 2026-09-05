@@ -48,15 +48,44 @@ def test_guided_scan_updates_the_shared_main_profile(monkeypatch):
     assert main.store.get(session_id).profile.name == "Demo Citizen"
 
 
-def test_guided_services_routes_are_namespaced_and_main_automation_remains_removed():
+def test_dashboard_upload_uses_the_guided_services_automation(monkeypatch):
     client = TestClient(main.app)
     session_id = client.post("/sessions").json()["session_id"]
+    monkeypatch.setattr(
+        "app.guided_services.document_uploader._matching_documents",
+        lambda _: [("Aadhaar Card", "C:/scans/aadharcard.jpg")],
+    )
+    monkeypatch.setattr(
+        "app.guided_services.document_uploader.upload_documents",
+        lambda *_: {"found": 1, "uploaded": 1, "failed": 0, "failed_documents": []},
+    )
+
     response = client.post(f"/sessions/{session_id}/automate_upload")
 
-    assert response.status_code == 410
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+    assert client.get(f"/sessions/{session_id}/upload-status").status_code == 200
     assert client.post("/guided-services/sessions/missing/automate_upload").status_code == 404
     assert client.post("/guided-services/api/analyze-form").status_code == 404
     assert client.post("/guided-services/api/execute-form").status_code == 404
+
+
+def test_dashboard_launches_the_debug_browser_used_by_upload(monkeypatch):
+    client = TestClient(main.app)
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(f"/sessions/{session_id}/service", json={"service_id": "CERT_INC"})
+    monkeypatch.setattr(
+        "app.guided_services.router.guided_launch_browser",
+        lambda sid, body: {"status": "success", "message": "Browser launched", "service_id": body.service_id},
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/launch_browser",
+        json={"service_id": "CERT_INC"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["service_id"] == "CERT_INC"
 
 
 def test_guided_upload_status_starts_idle_for_a_valid_session():

@@ -62,7 +62,7 @@ def main():
             "father_name": "Ramesh Kumar",  
             "mobile": "9876543210",
             "email": "rahul.sharma@example.com",
-            "occupation": "", 
+            "occupation": "employed", 
             "caste_category": "GENERAL",
             "address": "Flat 4B, Sunshine Apartments",
             "locality": "Market Area",

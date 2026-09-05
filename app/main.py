@@ -1013,8 +1013,22 @@ def confirm_and_deliver(sid: str, purpose: str = ""):
 
 @app.post("/sessions/{sid}/automate_upload", include_in_schema=False)
 def trigger_upload_automation(sid: str):
-    """Retired browser automation endpoint."""
-    raise HTTPException(410, "Browser document upload has been removed from Saarthi")
+    """Start the shared Guided Services document uploader for this session.
+
+    The dashboard keeps its original URL so existing application flows work,
+    while the implementation stays in the namespaced Guided Services module.
+    """
+    from app.guided_services.router import guided_automate_upload
+
+    return guided_automate_upload(sid)
+
+
+@app.get("/sessions/{sid}/upload-status", include_in_schema=False)
+def upload_automation_status(sid: str):
+    """Return status for an upload started from the dashboard."""
+    from app.guided_services.router import guided_upload_status
+
+    return guided_upload_status(sid)
 
 
 @app.get("/sessions/{sid}/gaps")
@@ -1455,7 +1469,9 @@ def scan_open_application_form(sid: str, service_id: str, port: int = 9222):
 @app.post('/sessions/{sid}/launch_browser', include_in_schema=False)
 def launch_browser_endpoint(sid: str, body: ApplicationServiceIn):
     """Open a session-specific, debuggable Chrome window for citizen login."""
-    _browser_automation_removed()
+    from app.guided_services.router import BrowserLaunchIn, guided_launch_browser
+
+    return guided_launch_browser(sid, BrowserLaunchIn(service_id=body.service_id))
 
 @app.post('/sessions/{sid}/automate_fill', include_in_schema=False)
 def trigger_fill_automation(sid: str, body: FormFillIn):

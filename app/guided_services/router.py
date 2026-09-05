@@ -296,9 +296,14 @@ def guided_automate_fill(sid: str, body: FormFillIn):
 @router.post("/sessions/{sid}/automate_upload")
 def guided_automate_upload(sid: str):
     _main()._session(sid)
-    from app.guided_services.document_uploader import upload_documents
+    from app.guided_services.document_uploader import _matching_documents, upload_documents
 
     scan_dir = str(Path.cwd() / "scans" / sid)
+    if not _matching_documents(Path(scan_dir)):
+        raise HTTPException(
+            400,
+            "No recognised scanned documents are available. Add and extract a labelled document before uploading.",
+        )
 
     with _UPLOAD_JOBS_LOCK:
         previous = _UPLOAD_JOBS.get(sid, {})

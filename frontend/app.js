@@ -335,10 +335,10 @@ function renderOnboardingStep() {
     label.textContent = "Preferred language";
     const select = document.createElement("select");
     select.id = "onboarding-language";
-    [["en", "English"], ["hi", "Hindi"], ["mr", "Marathi"], ["gu", "Gujarati"]].forEach(([value, text]) => {
+    SaarthiI18n.languages.forEach(([value, native, english]) => {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = text;
+      option.textContent = `${native} (${english})`;
       option.selected = value === (onboardingAnswers.language || language);
       select.appendChild(option);
     });
@@ -349,7 +349,10 @@ function renderOnboardingStep() {
     voice.innerHTML = '<input id="onboarding-voice-enabled" type="checkbox" /> <span><strong>Use voice assistance</strong>Saarthi can read guidance aloud and let you answer with your microphone. You can turn this off anytime.</span>';
     voice.querySelector("input").checked = speechEnabled;
     content.appendChild(voice);
-    select.addEventListener("change", () => { language = select.value; });
+    select.addEventListener("change", () => {
+      SaarthiI18n.setLanguage(select.value);
+      language = SaarthiI18n.getLanguage();
+    });
   } else {
     const field = document.createElement("div");
     field.className = "onboarding-field";
@@ -417,7 +420,8 @@ async function advanceOnboarding() {
       showToast("Please choose a language to continue.", "info");
       return;
     }
-    language = value;
+    SaarthiI18n.setLanguage(value);
+    language = SaarthiI18n.getLanguage();
     $("#language-select").value = language;
     const voiceChoice = $("#onboarding-voice-enabled");
     speechEnabled = Boolean(voiceChoice && voiceChoice.checked);
@@ -948,8 +952,9 @@ function renderDocumentUploadStep(container, plan = null) {
     upload.disabled = true;
     upload.textContent = "Uploading scanned documents...";
     try {
-      const result = await api("/sessions/" + sessionId + "/automate_upload", "POST");
-      showToast("Document upload started. Review the portal, then submit the application yourself.", "success");
+      await api("/sessions/" + sessionId + "/automate_upload", "POST");
+      const result = await waitForDocumentUploadResult();
+      showToast((result.uploaded || 0) + " document(s) uploaded. Review the portal, then submit the application yourself.", "success");
       const finalNote = document.createElement("p");
       finalNote.className = "final-submission-note";
       finalNote.textContent = "Final step: verify the uploaded files, submit the application yourself on the official portal, and complete any payment yourself if the portal requests a fee. Saarthi never handles payment credentials or final submission.";
@@ -965,7 +970,7 @@ function renderDocumentUploadStep(container, plan = null) {
         showToast("Review the filled form and complete any payment yourself on the official portal.", "info");
       });
       step.append(finalNote, finalAction);
-      upload.textContent = result.action === "uploading" ? "Uploading started" : "Upload documents";
+      upload.textContent = "Documents uploaded";
     } catch (error) {
       upload.disabled = false;
       upload.textContent = "I reviewed the form — upload documents";
@@ -974,6 +979,24 @@ function renderDocumentUploadStep(container, plan = null) {
   });
   step.append(heading, copy, upload);
   container.appendChild(step);
+}
+
+async function waitForDocumentUploadResult() {
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    const job = await api("/sessions/" + sessionId + "/upload-status");
+    if (job.status === "running" || job.status === "idle") continue;
+    if (job.status === "failed") throw new Error(job.error || "The browser uploader could not run.");
+    const result = job.result || {};
+    if (result.failed) {
+      const names = (result.failed_documents || []).join(", ");
+      throw new Error(result.failed + " document(s) could not be uploaded" + (names ? ": " + names : "") + ". Open the portal upload page and try again.");
+    }
+    if (!result.uploaded) throw new Error("No documents were uploaded. Open the portal's document-upload page and try again.");
+    return result;
+  }
+  throw new Error("Upload is still running. Check the browser and try again after it finishes.");
 }
 
 function setApplicationDocumentRequirements(plan) {

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 DEFAULT_LANGUAGE = "en"
 SUPPORTED = [
-    "en", "hi", "te", "ta", "bn",
+    "en", "hi", "te", "ta", "bn", "mr", "gu", "kn", "ml", "pa",
 ]
 
 PHRASES = {
@@ -75,6 +75,45 @@ PHRASES = {
         "en": "I will read your documents only to fill the form. Everything is deleted as soon as the work is done. OK?",
     },
 }
+
+# These languages are available in both the dashboard and the API. Keeping
+# every API phrase here prevents a selected language from silently falling
+# back to English during a guided flow, document scan, or completion response.
+PHRASES["greeting"].update({
+    "kn": "ನಮಸ್ಕಾರ! ನಾನು ಸಾರಥಿ. ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?",
+    "ml": "നമസ്കാരം! ഞാൻ സാരഥി. നിങ്ങളെ എങ്ങനെ സഹായിക്കാം?",
+    "pa": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਾਰਥੀ ਹਾਂ। ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ?",
+})
+PHRASES["scan_request"].update({
+    "kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ {doc} ಅನ್ನು ಕ್ಯಾಮೆರಾದ ಮುಂದೆ ಇರಿಸಿ",
+    "ml": "ദയവായി നിങ്ങളുടെ {doc} ക്യാമറയുടെ മുന്നിൽ വയ്ക്കുക",
+    "pa": "ਕਿਰਪਾ ਕਰਕੇ ਆਪਣਾ {doc} ਕੈਮਰੇ ਦੇ ਸਾਹਮਣੇ ਰੱਖੋ",
+})
+PHRASES["confirm"].update({
+    "kn": "ಈ ಮಾಹಿತಿ ಸರಿಯೇ?",
+    "ml": "ഈ വിവരങ്ങൾ ശരിയാണോ?",
+    "pa": "ਕੀ ਇਹ ਜਾਣਕਾਰੀ ਸਹੀ ਹੈ?",
+})
+PHRASES["patience"].update({
+    "kn": "ಯಾವ ಆತುರವೂ ಇಲ್ಲ, ನಿಧಾನವಾಗಿ ಹೇಳಿ",
+    "ml": "തിരക്കില്ല, സമയമെടുത്ത് പറയൂ",
+    "pa": "ਕੋਈ ਜਲਦੀ ਨਹੀਂ, ਆਪਣਾ ਸਮਾਂ ਲਓ",
+})
+PHRASES["scheme_discovery"].update({
+    "kn": "ಒಳ್ಳೆಯ ಸುದ್ದಿ! ನೀವು {count} ಯೋಜನೆಗಳಿಗೆ ಅರ್ಹರಾಗಿದ್ದೀರಿ. ವಿವರಿಸಬೇಕೇ?",
+    "ml": "നല്ല വാർത്ത! നിങ്ങൾക്ക് {count} പദ്ധതികൾക്ക് അർഹതയുണ്ട്. വിശദീകരിക്കട്ടേ?",
+    "pa": "ਚੰਗੀ ਖ਼ਬਰ! ਤੁਸੀਂ {count} ਯੋਜਨਾਵਾਂ ਲਈ ਯੋਗ ਹੋ। ਕੀ ਮੈਂ ਸਮਝਾਵਾਂ?",
+})
+PHRASES["completion"].update({
+    "kn": "ನಿಮ್ಮ ಕೆಲಸ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಪ್ರಿಂಟರ್‌ನಿಂದ ನಿಮ್ಮ ದಾಖಲೆಗಳನ್ನು ಪಡೆಯಿರಿ.",
+    "ml": "നിങ്ങളുടെ ജോലി പൂർത്തിയായി. പ്രിന്ററിൽ നിന്ന് രേഖകൾ എടുക്കുക.",
+    "pa": "ਤੁਹਾਡਾ ਕੰਮ ਪੂਰਾ ਹੋ ਗਿਆ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਪ੍ਰਿੰਟਰ ਤੋਂ ਆਪਣੇ ਕਾਗਜ਼ ਲੈ ਲਵੋ।",
+})
+PHRASES["consent"].update({
+    "kn": "ಫಾರ್ಮ್ ತುಂಬಲು ಮಾತ್ರ ನಾನು ನಿಮ್ಮ ದಾಖಲೆಗಳನ್ನು ಓದುತ್ತೇನೆ. ಕೆಲಸವಾದ ತಕ್ಷಣ ಎಲ್ಲವನ್ನೂ ಅಳಿಸಲಾಗುತ್ತದೆ. ಸರಿ?",
+    "ml": "ഫോം പൂരിപ്പിക്കാൻ മാത്രം ഞാൻ നിങ്ങളുടെ രേഖകൾ വായിക്കും. ജോലി കഴിഞ്ഞാലുടൻ എല്ലാം ഇല്ലാതാക്കും. ശരിയാണോ?",
+    "pa": "ਮੈਂ ਸਿਰਫ਼ ਫਾਰਮ ਭਰਨ ਲਈ ਤੁਹਾਡੇ ਦਸਤਾਵੇਜ਼ ਪੜ੍ਹਾਂਗਾ। ਕੰਮ ਮੁਕਣ 'ਤੇ ਸਭ ਕੁਝ ਮਿਟਾ ਦਿੱਤਾ ਜਾਵੇਗਾ। ਠੀਕ ਹੈ?",
+})
 
 
 def get_phrase(key: str, language: str = DEFAULT_LANGUAGE, **kwargs) -> str:
