@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="hi" data-default-language="hi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,11 +15,15 @@
       <span class="logo">🏛️</span>
       <div>
         <h1>Saarthi</h1>
-        <div class="subtitle">Digital Citizen Assistant Kiosk</div>
+        <div class="subtitle" data-i18n="kioskTitle">Digital Citizen Assistant Kiosk</div>
       </div>
     </div>
     <div class="header-meta">
-      <span class="badge badge-demo">Demo Mode</span>
+      <label class="guided-language-select" style="display:inline-flex;align-items:center;gap:8px;color:#fff;font-weight:700;">
+        <span data-i18n="language">Language</span>
+        <select data-language-select aria-label="Choose language" style="border:0;border-radius:6px;padding:6px 8px;font-weight:700;"></select>
+      </label>
+      <span class="badge badge-demo" data-i18n="demoMode">Demo Mode</span>
       <span>📍 Mamlatdar Office</span>
     </div>
   </header>
@@ -36,17 +40,17 @@
     <div class="steps">
       <div class="step-item active">
         <span class="step-num">1</span>
-        <span>Checklist</span>
+        <span data-i18n="checklist">Checklist</span>
       </div>
       <div class="step-connector"></div>
       <div class="step-item">
         <span class="step-num">2</span>
-        <span>Scan</span>
+        <span data-i18n="scan">Scan</span>
       </div>
       <div class="step-connector"></div>
       <div class="step-item">
         <span class="step-num">3</span>
-        <span>Form</span>
+        <span data-i18n="form">Form</span>
       </div>
       <div class="step-connector"></div>
       <div class="step-item">
@@ -62,11 +66,11 @@
     <!-- ─── STEP 0: SERVICE SELECTION ─── -->
     <section class="panel active" id="panel-identify">
       <div class="card glass-card">
-        <div class="card-title">Select a Service</div>
+        <div class="card-title" data-i18n="selectService">Select a Service</div>
         <div class="card-subtitle">आप कौन सा प्रमाणपत्र बनवाना चाहते हैं?</div>
         
         <div class="guided-state-picker">
-          <label for="guided-state-select">State</label>
+          <label for="guided-state-select" data-i18n="state">State</label>
           <select id="guided-state-select" onchange="changeGuidedState(this.value)">
             <option value="Goa">Goa</option>
             <option value="Other">Other</option>
@@ -84,7 +88,7 @@
     <!-- ─── STEP 1: CHECKLIST ─── -->
     <section class="panel" id="panel-checklist">
       <div class="card">
-        <div class="card-title" id="cl-service">Document Checklist</div>
+        <div class="card-title" id="cl-service" data-i18n="documentChecklist">Document Checklist</div>
         <div class="card-subtitle">ये दस्तावेज तैयार रखें / Keep these documents ready</div>
 
         <div class="checklist-meta">
@@ -93,11 +97,11 @@
             <div class="value" id="cl-fee">—</div>
           </div>
           <div class="meta-chip">
-            <div class="label">Processing</div>
+            <div class="label" data-i18n="processing">Processing</div>
             <div class="value" id="cl-processing">—</div>
           </div>
           <div class="meta-chip">
-            <div class="label">Validity</div>
+            <div class="label" data-i18n="validity">Validity</div>
             <div class="value" id="cl-validity">—</div>
           </div>
         </div>
@@ -125,10 +129,10 @@
           <div class="scan-dropzone" id="scan-dropzone" style="border: 2px dashed var(--primary); border-radius: 12px; padding: 28px 20px; background: #f8fafc; cursor: pointer; text-align: center; transition: all 0.2s ease;">
             <div class="scan-icon" style="font-size: 40px; margin-bottom: 10px;">📤</div>
             <div style="font-weight: 800; font-size: 18px; color: var(--primary); margin-bottom: 6px;">
-              Upload Document Image from Your Computer
+              <span data-i18n="uploadDocument">Upload Document Image from Your Computer</span>
             </div>
             <p style="color: var(--text-secondary); font-size: 14px; margin: 0 0 16px 0;">
-              Drag & Drop your image file here, or click the button below to browse
+              <span data-i18n="dragDrop">Drag & Drop your image file here, or click the button below to browse</span>
             </p>
             
             <button type="button" class="btn btn-primary" onclick="document.getElementById('scan-file-input').click()" style="padding: 10px 24px; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;">
@@ -137,7 +141,7 @@
             <input type="file" id="scan-file-input" accept="image/png, image/jpeg, image/jpg, image/webp" multiple onchange="handleImageSelect(event)" style="display: none;" />
             
             <div style="margin-top: 12px; font-size: 12px; color: #64748b;">
-              Supported formats: JPG, PNG, WEBP (Aadhaar, PAN, Ration Card, etc.)
+              <span data-i18n="supportedFormats">Supported formats: JPG, PNG, WEBP (Aadhaar, PAN, Ration Card, etc.)</span>
             </div>
           </div>
 
@@ -154,7 +158,7 @@
           </div>
 
           <div class="form-group" style="text-align: left; max-width: 480px; margin: 15px auto 0 auto;">
-            <label for="scan-doc-type" style="font-weight: bold; margin-bottom: 5px;">Expected Document Type (Optional):</label>
+              <label for="scan-doc-type" style="font-weight: bold; margin-bottom: 5px;" data-i18n="expectedDocument">Expected Document Type (Optional):</label>
             <select id="scan-doc-type" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px;">
               <option value="Aadhaar Card">Aadhaar Card / आधार कार्ड</option>
               <option value="PAN Card">PAN Card / पैन कार्ड</option>
@@ -190,7 +194,7 @@
             <div class="btn-group" style="margin-top: 20px;">
               <button class="btn btn-secondary" onclick="performScan()">🔄 Re-extract</button>
               <button class="btn btn-success" onclick="confirmScan()">
-                ✅ Use Demo Data to Auto-Fill ➔
+                ✅ Use Data to Auto-Fill ➔
               </button>
             </div>
 
@@ -616,6 +620,7 @@
     🔊
   </button>
 
+  <script src="/i18n.js?v=languages-3"></script>
   <script src="/guided-services/app.js?v=20260904"></script>
 </body>
 </html>

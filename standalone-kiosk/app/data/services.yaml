@@ -25,6 +25,7 @@ RESIDENCE:
   processing: "15-30 days"
   validity: "Lifetime"
   portal: goa_online
+  portal_url: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV05"
   documents:
     - name: Birth Certificate
     - name: Aadhaar Card

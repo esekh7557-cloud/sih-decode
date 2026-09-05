@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 DEFAULT_LANGUAGE = "hi"
-SUPPORTED = ["hi", "mr", "gu", "en"]
+SUPPORTED = [
+    "en", "hi", "bn", "te", "ta", "mr", "gu", "kn", "ml", "pa", "or", "as",
+    "ur", "ne", "sa", "mai", "kok", "sd", "ks", "mni", "brx", "sat",
+]
 
 PHRASES = {
     "greeting": {
@@ -52,5 +55,5 @@ PHRASES = {
 
 def get_phrase(key: str, language: str = DEFAULT_LANGUAGE, **kwargs) -> str:
     entry = PHRASES.get(key, {})
-    text = entry.get(language) or entry.get(DEFAULT_LANGUAGE) or ""
+    text = entry.get(language) or entry.get("en") or entry.get(DEFAULT_LANGUAGE) or ""
     return text.format(**kwargs) if kwargs else text

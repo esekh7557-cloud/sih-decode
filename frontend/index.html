@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-default-language="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,24 +14,24 @@
         <span class="brand-mark">JS</span>
         <span>
           <strong>Saarthi</strong>
-          <small>Citizen dashboard</small>
+            <small data-i18n="citizenDashboard">Citizen dashboard</small>
         </span>
       </a>
 
       <nav class="side-nav" aria-label="Dashboard sections">
-        <a class="active" href="#assistant">Assistant</a>
-        <a href="#profile">My details</a>
-        <a href="#documents">Documents</a>
-        <a href="#schemes">Scheme matches</a>
-        <a href="#services">Services</a>
-        <a href="/guided-services">Guided services</a>
+        <a class="active" href="#assistant" data-i18n="assistant">Assistant</a>
+        <a href="#profile" data-i18n="myDetails">My details</a>
+        <a href="#documents" data-i18n="documents">Documents</a>
+        <a href="#schemes" data-i18n="schemeMatches">Scheme matches</a>
+        <a href="#services" data-i18n="services">Services</a>
+        <a href="/guided-services" data-i18n="guidedServices">Guided services</a>
       </nav>
 
       <div class="privacy-card">
-        <span class="privacy-icon">Shield</span>
-        <strong>Your data stays protected</strong>
-        <p>Only the details needed for guidance are used. End the session to remove its saved data.</p>
-        <button class="text-button" id="end-session-button" type="button">End and erase session</button>
+        <span class="privacy-icon" data-i18n="shield">Shield</span>
+        <strong data-i18n="protected">Your data stays protected</strong>
+        <p data-i18n="protectedCopy">Only the details needed for guidance are used. End the session to remove its saved data.</p>
+        <button class="text-button" id="end-session-button" type="button" data-i18n="endSession">End and erase session</button>
       </div>
 
       <div class="session-indicator">
@@ -43,40 +43,35 @@
     <main class="main-content">
       <header class="topbar">
         <div>
-          <p class="eyebrow">DIGITAL CITIZEN ASSISTANT</p>
-          <h1>Government services, made simpler.</h1>
+          <p class="eyebrow" data-i18n="heroKicker">DIGITAL CITIZEN ASSISTANT</p>
+          <h1 data-i18n="heroTitle">Government services, made simpler.</h1>
         </div>
         <div class="topbar-actions">
           <label class="language-select">
-            <span>Language</span>
-            <select id="language-select" aria-label="Choose language">
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-              <option value="mr">Marathi</option>
-              <option value="gu">Gujarati</option>
-            </select>
+            <span data-i18n="language">Language</span>
+            <select id="language-select" aria-label="Choose language" data-language-select></select>
           </label>
           <button class="voice-button" id="voice-toggle" type="button" aria-pressed="true">Voice: On</button>
-          <button class="outline-button" id="save-profile-button" type="button">Save my details</button>
+          <button class="outline-button" id="save-profile-button" type="button" data-i18n="saveDetails">Save my details</button>
         </div>
       </header>
 
       <section class="welcome-card" id="assistant">
         <div class="welcome-copy">
-          <span class="assistant-badge">AI ASSISTANT</span>
-          <h2>Hello, I am Saarthi.</h2>
-          <p>Tell me what you need. I can find suitable government schemes, explain certificate requirements, and help you prepare an application.</p>
+          <span class="assistant-badge" data-i18n="aiAssistant">AI ASSISTANT</span>
+          <h2 data-i18n="heroHello">Hello, I am Saarthi.</h2>
+          <p data-i18n="heroCopy">Tell me what you need. I can find suitable government schemes, explain certificate requirements, and help you prepare an application.</p>
           <div class="prompt-chips" aria-label="Suggested questions">
-            <button type="button" data-prompt="Which schemes can I apply for?">Find schemes for me</button>
-            <button type="button" data-prompt="I want to get a scholarship.">Find a scholarship</button>
-            <button type="button" data-prompt="I need an income certificate.">I need a certificate</button>
-            <button type="button" data-prompt="Can I apply for PM-KISAN?">Ask about PM-KISAN</button>
+            <button type="button" data-prompt="Which schemes can I apply for?" data-i18n="findSchemes">Find schemes for me</button>
+            <button type="button" data-prompt="I want to get a scholarship." data-i18n="findScholarship">Find a scholarship</button>
+            <button type="button" data-prompt="I need an income certificate." data-i18n="needCertificate">I need a certificate</button>
+            <button type="button" data-prompt="Can I apply for PM-KISAN?" data-i18n="askPmkisan">Ask about PM-KISAN</button>
           </div>
         </div>
         <div class="citizen-summary">
-          <span class="summary-label">PROFILE READINESS</span>
+          <span class="summary-label" data-i18n="readiness">PROFILE READINESS</span>
           <strong id="readiness-score">0%</strong>
-          <span id="readiness-text">Add details to get personalised guidance</span>
+          <span id="readiness-text" data-i18n="readinessEmpty">Add details to get personalised guidance</span>
           <div class="progress-track"><span id="readiness-bar"></span></div>
         </div>
       </section>
@@ -86,29 +81,29 @@
           <section class="panel chat-panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">CONVERSATION</p>
-                <h2>Ask your assistant</h2>
+                <p class="eyebrow" data-i18n="conversation">CONVERSATION</p>
+                <h2 data-i18n="askAssistant">Ask your assistant</h2>
               </div>
-              <span class="online-pill">Online</span>
+              <span class="online-pill" data-i18n="online">Online</span>
             </div>
             <div class="chat-log" id="chat-log" aria-live="polite">
               <article class="chat-message assistant-message">
                 <span class="avatar">AI</span>
                 <div>
                   <strong>Saarthi Assistant</strong>
-                  <p>Welcome. Start by adding your details or ask me about a scheme or government service.</p>
+                    <p data-i18n="welcome">Welcome. Start by adding your details or ask me about a scheme or government service.</p>
                 </div>
               </article>
             </div>
             <form class="chat-composer" id="assistant-form">
-              <input id="assistant-input" autocomplete="off" placeholder="For example: Which schemes can I apply for?" />
-              <button type="button" class="mic-button" id="microphone-button" aria-label="Start speaking to the assistant">Speak</button>
-              <button type="submit" class="primary-button">Send <span aria-hidden="true">→</span></button>
+              <input id="assistant-input" autocomplete="off" placeholder="For example: Which schemes can I apply for?" data-i18n-placeholder="example" />
+              <button type="button" class="mic-button" id="microphone-button" aria-label="Start speaking to the assistant" data-i18n="speak" data-i18n-aria-label="startSpeaking">Speak</button>
+              <button type="submit" class="primary-button"><span data-i18n="send">Send</span> <span aria-hidden="true">→</span></button>
             </form>
             <section class="live-guidance" id="live-guidance" hidden aria-live="polite">
               <div class="live-guidance-heading">
-                <span>LIVE OFFICIAL GUIDANCE</span>
-                <strong>Application steps and websites</strong>
+                <span data-i18n="liveOfficial">LIVE OFFICIAL GUIDANCE</span>
+                <strong data-i18n="applicationSteps">Application steps and websites</strong>
               </div>
               <p id="live-guidance-notice"></p>
               <ol id="live-guidance-steps"></ol>
@@ -120,29 +115,29 @@
           <section class="panel" id="profile">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">STEP 1</p>
-                <h2>Your details</h2>
-                <p class="muted">These details help the assistant make relevant, explainable recommendations.</p>
-                <p class="sample-profile-note">Starter sample details are loaded for local testing. Replace them before a real application.</p>
+                <p class="eyebrow" data-i18n="step1">STEP 1</p>
+                <h2 data-i18n="yourDetails">Your details</h2>
+                <p class="muted" data-i18n="detailsCopy">These details help the assistant make relevant, explainable recommendations.</p>
+                <p class="sample-profile-note" data-i18n="sampleNote">Starter sample details are loaded for local testing. Replace them before a real application.</p>
               </div>
-              <button class="link-button" id="check-eligibility-button" type="button">Check eligibility</button>
+              <button class="link-button" id="check-eligibility-button" type="button" data-i18n="checkEligibility">Check eligibility</button>
             </div>
 
             <form class="profile-form" id="profile-form">
               <div class="field-group">
-                <label for="profile-name">Full name</label>
+                <label for="profile-name" data-i18n="fullName">Full name</label>
                 <input id="profile-name" name="name" placeholder="Enter your name" />
               </div>
               <div class="field-group">
-                <label for="profile-age">Age</label>
+                <label for="profile-age" data-i18n="age">Age</label>
                 <input id="profile-age" name="age" type="number" min="0" max="120" placeholder="e.g. 32" />
               </div>
               <div class="field-group">
-                <label for="profile-dob">Date of birth</label>
+                <label for="profile-dob" data-i18n="dateOfBirth">Date of birth</label>
                 <input id="profile-dob" name="dob" placeholder="DD/MM/YYYY" />
               </div>
               <div class="field-group">
-                <label for="profile-gender">Gender</label>
+                <label for="profile-gender" data-i18n="gender">Gender</label>
                 <select id="profile-gender" name="gender">
                   <option value="">Select</option>
                   <option value="female">Female</option>
@@ -151,7 +146,7 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-state">State</label>
+                <label for="profile-state" data-i18n="state">State</label>
                 <select id="profile-state" name="state">
                   <option value="">Select state</option>
                   <option value="Goa">Goa</option>
@@ -161,11 +156,11 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-district">District</label>
+                <label for="profile-district" data-i18n="district">District</label>
                 <input id="profile-district" name="district" placeholder="Enter your district" />
               </div>
               <div class="field-group">
-                <label for="profile-occupation">Occupation</label>
+                <label for="profile-occupation" data-i18n="occupation">Occupation</label>
                 <select id="profile-occupation" name="occupation">
                   <option value="">Select</option>
                   <option value="farmer">Farmer</option>
@@ -178,19 +173,19 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-income">Annual family income (INR)</label>
+                <label for="profile-income" data-i18n="annualIncome">Annual family income (INR)</label>
                 <input id="profile-income" name="annual_income" type="number" min="0" placeholder="e.g. 250000" />
               </div>
               <div class="field-group">
-                <label for="profile-mobile">Mobile number</label>
+                <label for="profile-mobile" data-i18n="mobile">Mobile number</label>
                 <input id="profile-mobile" name="mobile" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number" />
               </div>
               <div class="field-group">
-                <label for="profile-address">Address</label>
+                <label for="profile-address" data-i18n="address">Address</label>
                 <input id="profile-address" name="address" placeholder="House, village or locality" />
               </div>
               <div class="field-group">
-                <label for="profile-category">Social category</label>
+                <label for="profile-category" data-i18n="socialCategory">Social category</label>
                 <select id="profile-category" name="caste_category">
                   <option value="">Select</option>
                   <option value="GENERAL">General</option>
@@ -204,11 +199,11 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-land">Cultivable land (acres)</label>
+                <label for="profile-land" data-i18n="land">Cultivable land (acres)</label>
                 <input id="profile-land" name="land_acres" type="number" min="0" step="0.1" placeholder="e.g. 2" />
               </div>
               <div class="field-group">
-                <label for="profile-sector">Employment sector</label>
+                <label for="profile-sector" data-i18n="employmentSector">Employment sector</label>
                 <select id="profile-sector" name="employment_sector">
                   <option value="">Select</option>
                   <option value="organized">Organized</option>
@@ -216,7 +211,7 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-house">Home type</label>
+                <label for="profile-house" data-i18n="homeType">Home type</label>
                 <select id="profile-house" name="house_type">
                   <option value="">Select</option>
                   <option value="pucca">Pucca</option>
@@ -225,16 +220,16 @@
                 </select>
               </div>
               <div class="field-group">
-                <label for="profile-child-age">Girl child age (optional)</label>
+                <label for="profile-child-age" data-i18n="girlChildAge">Girl child age (optional)</label>
                 <input id="profile-child-age" name="girl_child_age" type="number" min="0" max="30" placeholder="e.g. 6" />
               </div>
               <div class="toggle-grid">
-                <label class="check-control"><input name="is_bpl" type="checkbox" /> <span>BPL card holder</span></label>
-                <label class="check-control"><input name="has_lpg_connection" type="checkbox" checked /> <span>Has LPG connection</span></label>
-                <label class="check-control"><input name="is_student" type="checkbox" /> <span>Student</span></label>
-                <label class="check-control"><input name="is_entrepreneur" type="checkbox" /> <span>Entrepreneur</span></label>
-                <label class="check-control"><input name="is_pregnant" type="checkbox" /> <span>Pregnant</span></label>
-                <label class="check-control"><input name="is_first_child" type="checkbox" /> <span>First child</span></label>
+                <label class="check-control"><input name="is_bpl" type="checkbox" /> <span data-i18n="bpl">BPL card holder</span></label>
+                <label class="check-control"><input name="has_lpg_connection" type="checkbox" checked /> <span data-i18n="lpg">Has LPG connection</span></label>
+                <label class="check-control"><input name="is_student" type="checkbox" /> <span data-i18n="student">Student</span></label>
+                <label class="check-control"><input name="is_entrepreneur" type="checkbox" /> <span data-i18n="entrepreneur">Entrepreneur</span></label>
+                <label class="check-control"><input name="is_pregnant" type="checkbox" /> <span data-i18n="pregnant">Pregnant</span></label>
+                <label class="check-control"><input name="is_first_child" type="checkbox" /> <span data-i18n="firstChild">First child</span></label>
               </div>
             </form>
           </section>
@@ -244,44 +239,44 @@
           <section class="panel compact-panel" id="documents">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">STEP 2</p>
-                <h2>Your documents</h2>
+                <p class="eyebrow" data-i18n="step2">STEP 2</p>
+                <h2 data-i18n="yourDocuments">Your documents</h2>
               </div>
               <span class="count-pill" id="document-count">0 files</span>
             </div>
             <label class="upload-zone" for="document-input">
               <span class="upload-icon">+</span>
-              <strong>Add documents</strong>
-              <span>Upload one or more files, then choose the document type for each one</span>
-              <small>PNG, JPG, JPEG, or WEBP</small>
+              <strong data-i18n="addDocuments">Add documents</strong>
+              <span data-i18n="uploadCopy">Upload one or more files, then choose the document type for each one</span>
+              <small data-i18n="fileTypes">PNG, JPG, JPEG, or WEBP</small>
             </label>
             <input id="document-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple hidden />
             <div class="document-list" id="document-list">
-              <p class="empty-documents">No documents added yet.</p>
+              <p class="empty-documents" data-i18n="noDocuments">No documents added yet.</p>
             </div>
             <section class="additional-data" id="additional-data" hidden>
-              <strong>Additional information found</strong>
-              <p>Saved for this session only. Review it before using it in an application.</p>
+              <strong data-i18n="additionalFound">Additional information found</strong>
+              <p data-i18n="sessionOnly">Saved for this session only. Review it before using it in an application.</p>
               <div id="additional-data-list"></div>
             </section>
             <section class="saved-data" id="saved-data" hidden>
-              <strong>Extracted and saved details</strong>
-              <p>These values were saved to the current private session and copied into Your details.</p>
+              <strong data-i18n="extractedDetails">Extracted and saved details</strong>
+              <p data-i18n="copiedDetails">These values were saved to the current private session and copied into Your details.</p>
               <div id="saved-data-list"></div>
             </section>
-            <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled>Extract labelled documents</button>
-            <p class="helper-text" id="scan-status">You can also complete the profile manually.</p>
+            <button class="secondary-button full-width" id="scan-documents-button" type="button" disabled data-i18n="extractDocuments">Extract labelled documents</button>
+            <p class="helper-text" id="scan-status" data-i18n="manualProfile">You can also complete the profile manually.</p>
           </section>
 
           <section class="panel compact-panel" id="services">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">STEP 3</p>
-                <h2>Government services</h2>
+                <p class="eyebrow" data-i18n="step3">STEP 3</p>
+                <h2 data-i18n="governmentServices">Government services</h2>
               </div>
             </div>
-            <p class="muted">Choose a service to see its documents, fee, and processing time.</p>
-            <div class="service-list" id="service-list"><p class="muted">Loading services...</p></div>
+            <p class="muted" data-i18n="serviceCopy">Choose a service to see its documents, fee, and processing time.</p>
+            <div class="service-list" id="service-list"><p class="muted" data-i18n="loading">Loading services...</p></div>
             <div class="service-checklist" id="service-checklist" hidden></div>
           </section>
         </div>
@@ -290,9 +285,9 @@
       <section class="panel schemes-panel" id="schemes">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">PERSONALISED RESULTS</p>
-           <h2>Scheme matches for you</h2>
-            <p class="muted">Verified matches are based on transparent rules. AI suggestions require manual confirmation.</p>
+            <p class="eyebrow" data-i18n="personalised">PERSONALISED RESULTS</p>
+           <h2 data-i18n="matchesForYou">Scheme matches for you</h2>
+            <p class="muted" data-i18n="matchesCopy">Verified matches are based on transparent rules. AI suggestions require manual confirmation.</p>
           </div>
           <span class="count-pill" id="scheme-count">0 matches</span>
         </div>
@@ -306,7 +301,7 @@
 
       <footer>
         <span>Saarthi</span>
-        <span>Explainable scheme guidance. Human verification for final applications.</span>
+        <span data-i18n="footerCopy">Explainable scheme guidance. Human verification for final applications.</span>
       </footer>
     </main>
   </div>
@@ -315,19 +310,20 @@
     <section class="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       <div class="onboarding-brand"><span class="brand-mark">S</span><span><strong>Saarthi</strong><small>Private citizen setup</small></span></div>
       <div class="onboarding-progress" aria-label="Setup progress"><span id="onboarding-progress-bar"></span></div>
-      <p class="eyebrow" id="onboarding-kicker">WELCOME</p>
-      <h2 id="onboarding-title">Choose your language</h2>
-      <p class="onboarding-copy" id="onboarding-copy">Start with your preferred language. You can change it later from the dashboard.</p>
+      <p class="eyebrow" id="onboarding-kicker" data-i18n="welcomeKicker">WELCOME</p>
+      <h2 id="onboarding-title" data-i18n="chooseLanguage">Choose your language</h2>
+      <p class="onboarding-copy" id="onboarding-copy" data-i18n="chooseLanguageCopy">Start with your preferred language. You can change it later from the dashboard.</p>
       <div id="onboarding-content"></div>
       <div class="onboarding-actions">
-        <button class="secondary-button" id="onboarding-back" type="button">Back</button>
-        <button class="primary-button" id="onboarding-next" type="button">Continue</button>
+        <button class="secondary-button" id="onboarding-back" type="button" data-i18n="back">Back</button>
+        <button class="primary-button" id="onboarding-next" type="button" data-i18n="continue">Continue</button>
       </div>
-      <button class="onboarding-end text-button" id="onboarding-end-session" type="button">End and erase session</button>
-      <p class="onboarding-note">Your answers stay in this session and are erased only when you choose <strong>End and erase session</strong>.</p>
+      <button class="onboarding-end text-button" id="onboarding-end-session" type="button" data-i18n="endSession">End and erase session</button>
+      <p class="onboarding-note" data-i18n="eraseNote">Your answers stay in this session and are erased only when you choose <strong>End and erase session</strong>.</p>
     </section>
   </div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  <script src="/i18n.js?v=languages-3"></script>
   <script src="/app.js?v=dashboard-8"></script>
 </body>
 </html>

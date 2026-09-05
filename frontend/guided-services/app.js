@@ -12,7 +12,7 @@ const SESSION_STORAGE_KEY = "janseva.session.id";
 // ── State ──
 let sessionId = null;
 let currentStep = 0; // 0-based: 0=GREET, 1=IDENTIFY, 2=CHECKLIST, 3=SCAN, 4=FILL, 5=DELIVER
-let language = "hi";
+let language = window.SaarthiI18n ? SaarthiI18n.getLanguage() : "hi";
 let selectedServiceId = null;
 let guidedState = "Goa";
 let scanData = null;
@@ -289,7 +289,7 @@ async function triggerAutoFill() {
   
   // Map selectedServiceId to the correct Python mapping file
   let certType = "income_certificate";
-  if (selectedServiceId === "REV07" || selectedServiceId === "RESIDENCE") {
+  if (selectedServiceId === "REV05" || selectedServiceId === "RESIDENCE") {
       certType = "residence_certificate";
   } else if (selectedServiceId === "DOMICILE") {
       certType = "domicile_certificate";
@@ -555,9 +555,7 @@ async function performScan() {
 function speakText(text) {
   if (!window.speechSynthesis) return;
   const utterance = new SpeechSynthesisUtterance(text);
-  if (language === "hi") utterance.lang = "hi-IN";
-  else if (language === "mr") utterance.lang = "mr-IN";
-  else utterance.lang = "en-IN";
+  utterance.lang = window.SaarthiI18n ? SaarthiI18n.languageCode(language) : "hi-IN";
   window.speechSynthesis.speak(utterance);
 }
 
@@ -569,9 +567,7 @@ function startDictation() {
   }
   
   const recognition = new SpeechRecognition();
-  if (language === "hi") recognition.lang = "hi-IN";
-  else if (language === "mr") recognition.lang = "mr-IN";
-  else recognition.lang = "en-IN";
+  recognition.lang = window.SaarthiI18n ? SaarthiI18n.languageCode(language) : "hi-IN";
   
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -1186,7 +1182,13 @@ async function renderDeliverPanel(data) {
 
 
 function openGovPortal() {
-  window.open("https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV07", "_blank");
+  const portalUrls = {
+    RESIDENCE: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV05",
+    REV05: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV05",
+    CERT_INC: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV07",
+    REV07: "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV07",
+  };
+  window.open(portalUrls[selectedServiceId] || portalUrls.CERT_INC, "_blank");
 }
 
 function getCurrentFormValues() {
@@ -1473,23 +1475,43 @@ async function launchBrowser() {
 
 async function startUploadAutomation() {
   if (!sessionId) return;
+  const btn = document.getElementById('upload-btn');
   try {
-    const btn = document.getElementById('upload-btn');
     if (btn) {
       btn.innerHTML = '<span class="spinner"></span> Automating...';
       btn.disabled = true;
     }
     await api(`/sessions/${sessionId}/automate_upload`, 'POST');
-    toast('Upload automation started! Please do not touch the mouse.', 'success');
-    setTimeout(() => {
-      if (btn) {
-        btn.innerHTML = '?? Automate Document Uploads';
-        btn.disabled = false;
-      }
-    }, 10000);
+    toast('Uploading documents. Please do not touch the browser.', 'info');
+    await waitForUploadResult();
   } catch (e) {
     toast('Failed to start upload automation: ' + e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.textContent = 'Automate Document Uploads';
+      btn.disabled = false;
+    }
   }
+}
+
+async function waitForUploadResult() {
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const job = await api(`/sessions/${sessionId}/upload-status`, 'GET');
+    if (job.status === 'running' || job.status === 'idle') continue;
+    if (job.status === 'failed') {
+      throw new Error(job.error || 'The browser uploader could not run.');
+    }
+    const result = job.result || {};
+    if (result.failed) {
+      const names = (result.failed_documents || []).join(', ');
+      throw new Error(`${result.failed} document(s) could not be uploaded${names ? `: ${names}` : ''}. Open the portal upload page and try again.`);
+    }
+    toast(`${result.uploaded || 0} document(s) uploaded successfully. Review them in the portal before submitting.`, 'success');
+    return;
+  }
+  throw new Error('Upload is still running. Check the browser and try again after it finishes.');
 }
 
 
@@ -1509,6 +1531,20 @@ function printDocument(elementId) {
 // Reuse the session created by the main website whenever possible.  A direct
 // visit still gets a normal main-app session as a fallback.
 window.addEventListener('DOMContentLoaded', async () => {
+  const languageSelect = document.querySelector('[data-language-select]');
+  if (languageSelect) {
+    languageSelect.value = language;
+    languageSelect.addEventListener('change', async (event) => {
+        language = event.target.value;
+        SaarthiI18n.setLanguage(language);
+        language = SaarthiI18n.getLanguage();
+        languageSelect.value = language;
+      if (sessionId) {
+        try { await api(`/sessions/${sessionId}/language`, 'POST', { language }); }
+        catch (error) { toast(error.message, 'error'); }
+      }
+    });
+  }
   try {
     const existingSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
     if (existingSessionId) {
@@ -1529,8 +1565,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       sessionId = session.session_id;
       localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
     }
-    language = "en";
-    await api(`/sessions/${sessionId}/language`, "POST", { language: "en" });
+    language = (window.SaarthiI18n && SaarthiI18n.getLanguage()) || language || "hi";
+    SaarthiI18n.setLanguage(language);
+    language = SaarthiI18n.getLanguage();
+    await api(`/sessions/${sessionId}/language`, "POST", { language });
     guidedState = "Goa";
     const stateSelect = document.getElementById("guided-state-select");
     if (stateSelect) stateSelect.value = guidedState;

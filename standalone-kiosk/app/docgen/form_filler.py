@@ -164,6 +164,7 @@ def main():
     commonLabels = {
         'applying_for': ['Applying for'],
         'purpose': ['Purpose'],
+        'residence_period': ['Residence Period'],
         'title': ['Title', 'Prefix'],
         'name': ['Name of the applicant', 'Applicant Name', 'Name'],
         'place_of_birth': ['Place of Birth'],

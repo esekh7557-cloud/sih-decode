@@ -158,6 +158,11 @@ def serve_js():
     return FileResponse(str(_FRONTEND / "app.js"), media_type="application/javascript", headers=NO_CACHE)
 
 
+@app.get("/i18n.js", include_in_schema=False)
+def serve_i18n_js():
+    return FileResponse(str(_FRONTEND / "i18n.js"), media_type="application/javascript", headers=NO_CACHE)
+
+
 @app.get("/application.js", include_in_schema=False)
 def serve_application_js():
     raise HTTPException(410, "The browser form-filling and document-upload workflow has been removed")
@@ -377,6 +382,65 @@ class ScanIn(BaseModel):
     expected_type: Optional[str] = None
     images: Optional[List[Union[str, ImageItem, Dict[str, Any]]]] = None
 
+
+def _canonical_scan_filename(expected_type: str | None, file_name: str) -> str:
+    """Give known document types a stable filename for portal uploading.
+
+    The browser uploader identifies documents from their filenames.  Users can
+    upload a file called ``IMG_1234.jpg`` while selecting "Aadhaar Card", so
+    relying on the original filename makes later document rows get skipped.
+    """
+    suffix = Path(file_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".pdf"}:
+        suffix = ".png"
+
+    normalized = re.sub(r"[^a-z0-9]", "", str(expected_type or "").lower())
+    names = {
+        "aadhaar": "aadharcard",
+        "aadhaarcard": "aadharcard",
+        "aadhar": "aadharcard",
+        "aadharcard": "aadharcard",
+        "identityproof": "aadharcard",
+        "idproof": "aadharcard",
+        "voterid": "voterid",
+        "voteridcard": "voterid",
+        "electioncard": "electioncard",
+        "epic": "epic",
+        "pancard": "pancard",
+        "birthcertificate": "birthcertificate",
+        "ageproof": "birthcertificate",
+        "photograph": "photograph",
+        "photo": "photograph",
+        "passportsizephotograph": "photograph",
+        "incomecertificate": "incomecertificate",
+        "residencecertificate": "residencecertificate",
+        "castecertificate": "castecertificate",
+        "rationcard": "rationcard",
+        "electricitybill": "electricitybill",
+        "affidavit": "affidavit",
+        "selfdeclaration": "selfdeclaration",
+    }
+    basename = names.get(normalized)
+    if not basename:
+        # Service requirements sometimes append a category, for example
+        # "Voter Id card - Id proof" or "PAN card - Id proof".
+        if "voterid" in normalized or "electioncard" in normalized or normalized == "epic":
+            basename = "voterid"
+        elif "pancard" in normalized:
+            basename = "pancard"
+        elif "aadhaar" in normalized or "aadhar" in normalized:
+            basename = "aadharcard"
+        elif "birthcertificate" in normalized:
+            basename = "birthcertificate"
+        elif "photograph" in normalized or normalized == "photo":
+            basename = "photograph"
+        elif "identityproof" in normalized or "idproof" in normalized:
+            basename = "aadharcard"
+    if basename:
+        return basename + suffix
+
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", file_name) or "document.png"
+
 @app.post("/sessions/{sid}/scan")
 async def scan(sid: str, body: ScanIn):
     s = _session(sid)
@@ -410,11 +474,7 @@ async def scan(sid: str, body: ScanIn):
                     img_data = str(img_item)
                 
                 # Standardize common filenames
-                clean_name = file_name.lower().replace(" ", "_")
-                if "aadhaar" in clean_name or "aadhar" in clean_name:
-                    clean_name = "aadharcard.png"
-                elif "pan" in clean_name and "card" in clean_name:
-                    clean_name = "pancard.png"
+                clean_name = _canonical_scan_filename(body.expected_type, file_name)
                 
                 # Avoid overwriting if same name exists by appending index if needed, 
                 # but for Aadhaar/PAN we usually want to overwrite or keep them consistent.

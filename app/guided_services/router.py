@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/guided-services", tags=["guided-services"])
 _FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "guided-services"
 _GUIDED_STATES = {"Goa", "Other"}
+_UPLOAD_JOBS: dict[str, dict[str, Any]] = {}
+_UPLOAD_JOBS_LOCK = threading.Lock()
 
 
 def _main():
@@ -60,6 +62,15 @@ def guided_services_css():
 def guided_services_js():
     return FileResponse(
         str(_FRONTEND / "app.js"),
+        media_type="application/javascript",
+        headers=_main().NO_CACHE,
+    )
+
+
+@router.get("/i18n.js", include_in_schema=False)
+def guided_services_i18n_js():
+    return FileResponse(
+        _FRONTEND.parent / "i18n.js",
         media_type="application/javascript",
         headers=_main().NO_CACHE,
     )
@@ -288,14 +299,32 @@ def guided_automate_upload(sid: str):
 
     scan_dir = str(Path.cwd() / "scans" / sid)
 
+    with _UPLOAD_JOBS_LOCK:
+        previous = _UPLOAD_JOBS.get(sid, {})
+        if previous.get("status") == "running":
+            return {"action": "uploading", "status": "running", "message": "Document upload is already running"}
+        _UPLOAD_JOBS[sid] = {"status": "running", "result": None, "error": None}
+
     def run_upload():
         try:
-            upload_documents(scan_dir, 9222)
+            result = upload_documents(scan_dir, 9222)
+            with _UPLOAD_JOBS_LOCK:
+                _UPLOAD_JOBS[sid] = {"status": "completed", "result": result, "error": None}
         except Exception as exc:
             print(f"Upload failed: {exc}")
+            with _UPLOAD_JOBS_LOCK:
+                _UPLOAD_JOBS[sid] = {"status": "failed", "result": None, "error": str(exc)}
 
     threading.Thread(target=run_upload, daemon=True).start()
-    return {"action": "uploading"}
+    return {"action": "uploading", "status": "running"}
+
+
+@router.get("/sessions/{sid}/upload-status")
+def guided_upload_status(sid: str):
+    _main()._session(sid)
+    with _UPLOAD_JOBS_LOCK:
+        status = _UPLOAD_JOBS.get(sid)
+        return status or {"status": "idle", "result": None, "error": None}
 
 
 @router.post("/api/upload_documents")

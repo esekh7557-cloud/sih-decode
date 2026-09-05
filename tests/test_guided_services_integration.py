@@ -59,6 +59,16 @@ def test_guided_services_routes_are_namespaced_and_main_automation_remains_remov
     assert client.post("/guided-services/api/execute-form").status_code == 404
 
 
+def test_guided_upload_status_starts_idle_for_a_valid_session():
+    client = TestClient(main.app)
+    session_id = client.post("/guided-services/sessions").json()["session_id"]
+
+    response = client.get(f"/guided-services/sessions/{session_id}/upload-status")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "idle"
+
+
 def test_guided_launch_browser_uses_selected_service_portal_url(monkeypatch, tmp_path):
     client = TestClient(main.app)
     session_id = client.post("/guided-services/sessions").json()["session_id"]
@@ -91,6 +101,12 @@ def test_guided_launch_browser_uses_selected_service_portal_url(monkeypatch, tmp
         "?__DocId=REV&__ServiceId=REV07"
     )
     assert captured["kwargs"]["shell"] is False
+
+
+def test_residence_certificate_uses_rev05_portal_url():
+    assert main._portal_url(main._application_service("RESIDENCE")) == (
+        "https://goaonline.gov.in/Appln/UIL/deptServices?__DocId=REV&__ServiceId=REV05"
+    )
 
 
 def test_income_required_fields_include_types_and_choices():

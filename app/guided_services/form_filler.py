@@ -19,16 +19,17 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "purpose": "economically weaker section",
     "residence_period": "15",
     "title": "Mr.",
-    "name": "Rahul Sharma",
-    "place_of_birth": "Panaji",
-    "dob": "15/08/1990",
+    "name": "Rohan Devidas Naik",
+    "place_of_birth": "Asilo Hospital, Mapusa, Goa",
+    "dob": "15/08/1998",
     "gender": "male",
     "marital_status": "Married",
     "guardian_relation": "Father",
-    "father_name": "Ramesh Kumar",
+    "father_name": "Devidas vithal Naik",
     "mobile": "9876543210",
-    "email": "rahul.sharma@example.com",
+    "email": "Devidas.naik@gmail.com",
     "occupation": "employed",
+    "employment_details": "Private employment, Panaji",
     "caste_category": "GENERAL",
     "address": "Flat 4B, Sunshine Apartments",
     "locality": "Market Area",
@@ -53,6 +54,19 @@ DEFAULT_FORM_DATA: dict[str, Any] = {
     "id_proof_no": "673720425369",
     "certify": "yes",
     "family_members": [],
+    # Residence-certificate address history.  These values are used only when
+    # the Goa Online Residence Details modal is open.
+    "where_to_submit": "Taluka Office",
+    "residence_certificate_period": "Since",
+    "residence_months": "0",
+    "house_no": "",
+    "rented_owned": "Owned",
+    "currently_staying": "Yes",
+    "period_of_stay": "Since",
+    "residence_from_date": "01-SEP-2011",
+    "residence_to_date": "05-SEP-2026",
+    "apply_to_concerned_office": "Yes",
+    "voter_id_no": "EPIC1234567",
 }
 
 _CERTIFICATE_CODES = {
@@ -102,6 +116,7 @@ def wait_and_click_yes(driver, action_name, timeout=10):
     print(f"   [WARN] Could not find 'Yes' modal for {action_name} within {timeout}s")
     return False
 
+
 def fill_form(
     session_id: str | None,
     port: int = 9222,
@@ -115,9 +130,18 @@ def fill_form(
     # Use a fresh demo-data copy for every run. Answers from the Guided
     # Services page are merged only into this local copy and are never saved.
     data = default_form_data()
+    selected_certificate = _CERTIFICATE_CODES.get(
+        certificate_type, certificate_type or data["certificate_type"]
+    )
+    if selected_certificate == "CERT_DOM":
+        from app.guided_services.residence_form_filler import residence_demo_overrides
+
+        # Only Residence Certificate runs receive these answers.  Income keeps
+        # using its original demo values.
+        data.update(residence_demo_overrides())
     if data_override:
         data.update({key: value for key, value in data_override.items() if key in data and value is not None})
-    data["certificate_type"] = _CERTIFICATE_CODES.get(certificate_type, certificate_type or data["certificate_type"])
+    data["certificate_type"] = selected_certificate
     
     cert_type = data.get("certificate_type", "CERT_INC")
     print(f"   [INFO] Certificate type: {cert_type}")
@@ -194,6 +218,7 @@ def fill_form(
     commonLabels = {
         'applying_for': ['Applying for'],
         'purpose': ['Purpose'],
+        'residence_period': ['Residence Period'],
         'title': ['Title', 'Prefix'],
         'name': ['Name of the applicant', 'Applicant Name', 'Name'],
         'place_of_birth': ['Place of Birth'],
@@ -234,7 +259,22 @@ def fill_form(
         'constituency': ['Constituency'],
     }
     residenceLabels = {
-        'residence_period': ['Residence Period'],
+        # These labels are taken from the scraped Residence Certificate form.
+        # The address itself is added later in the Residence Details modal.
+        'applying_for': ['Applying for', 'Self'],
+        'purpose': ['Purpose'],
+        'where_to_submit': ['Where do you intend to submit the certificate?'],
+        'residence_certificate_period': ['Residence Certificate Period'],
+        'residence_period': ['Years', 'Residence Period'],
+        'residence_months': ['Months'],
+        'occupation': ['Occupational Status'],
+        'employment_details': ['Employment Details for last 6 months', 'Employment Details'],
+        'guardian_relation': ['Father/Husband/Guardian/Mother', "Father's/Husband's/Guardian's/Mother's Name", 'Father/Husband/Wife/Guardian'],
+        'father_name': ["Father's/Husband's/Guardian's/Mother's Name", "Father's/Husband's", 'Father Name', "Father's Name"],
+        'previous_certificate': ['Any Residence Certificate was issued earlier?'],
+        'voter_id_no': ['Voter ID No'],
+        'ration_card': ['Ration Card No'],
+        'immovable_property': ['Immovable properties owned by the applicant'],
         'part_no': ['Part No.', 'Part No'],
         'serial_no': ['Serial No.', 'Serial No'],
         'electoral_year': ['Electoral Roll Year'],
@@ -257,6 +297,8 @@ def fill_form(
 
     for key, val in data.items():
         if key not in labelMapping:
+            continue
+        if val is None or (isinstance(val, str) and not val.strip()):
             continue
             
         success = False
@@ -376,11 +418,16 @@ def fill_form(
             err_msg = last_error.split('\n')[0] if last_error else "Element not found or permanently hidden."
             print(f"   [WARN] Could not fill {key} after 3 attempts. Skipping. ({err_msg})")
 
-    # 4. Handle "+ Add New" Family Member Modal
-    print("\n[FILL] Handling Family Member Modal...")
-    try:
-        add_new_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Add New')] | //a[contains(., 'Add New')]")
-        if add_new_btns:
+    # 4. Handle certificate-specific modals.  Income has an Add New Family
+    # Member dialog; Residence has the Residence Details dialog shown in the
+    # form scrape.  They intentionally use separate paths because both dialogs
+    # have an Add button but their fields are unrelated.
+    if cert_type == 'CERT_INC':
+        print("\n[FILL] Handling Family Member Modal...")
+        try:
+            add_new_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Add New')] | //a[contains(., 'Add New')]")
+            if not add_new_btns:
+                raise LookupError("Could not find '+ Add New' for the family-member modal")
             for btn in reversed(add_new_btns):
                 if btn.is_displayed():
                     driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", btn)
@@ -489,8 +536,14 @@ def fill_form(
                 except:
                     print("   [WARN] Could not click 'Add' natively. Skipping.")
                 
-    except Exception as e:
-        print(f"   [FAIL] Error processing modal: {e}")
+        except Exception as e:
+            print(f"   [FAIL] Error processing family-member modal: {e}")
+    elif cert_type == 'CERT_DOM':
+        from app.guided_services.residence_form_filler import fill_residence_details_modal
+
+        if not fill_residence_details_modal(driver, data):
+            print("\n[HALT] Residence Details was not completed. Save & Proceed and document upload were not started.")
+            return
 
     # 5. Click "Save & Proceed"
     print("\n[FILL] Submitting Form...")
@@ -538,9 +591,21 @@ def fill_form(
     print("\n[WAIT] Waiting 4 seconds for page to transition to Document Upload...")
     time.sleep(4.0)
     
-    print("\n[LAUNCH] Automatically running Document Uploader...")
-    import subprocess
-    subprocess.run([sys.executable, "-m", "app.guided_services.document_uploader"])
+    if session_id:
+        print("\n[LAUNCH] Automatically uploading this session's scanned documents...")
+        from pathlib import Path
+        from app.guided_services.document_uploader import upload_documents
+
+        scan_folder = Path.cwd() / "scans" / session_id
+        if not scan_folder.is_dir():
+            print("[INFO] No scanned documents exist for this session; document upload skipped.")
+        else:
+            try:
+                upload_documents(scan_folder, port)
+            except Exception as exc:
+                print(f"[WARN] Document upload could not start: {exc}")
+    else:
+        print("\n[INFO] No Saarthi session was provided, so document upload was skipped.")
 
 
 def main():

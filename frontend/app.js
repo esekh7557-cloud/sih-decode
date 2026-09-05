@@ -93,7 +93,7 @@ function syncVoiceButton() {
   const button = $("#voice-toggle");
   if (!button) return;
   button.setAttribute("aria-pressed", String(speechEnabled));
-  button.textContent = speechEnabled ? "Voice: On" : "Voice: Off";
+  button.textContent = speechEnabled ? SaarthiI18n.t("voiceOn") : SaarthiI18n.t("voiceOff");
 }
 
 function profileInputSelector(key) {
@@ -461,14 +461,12 @@ function showToast(message, type = "info") {
 }
 
 function speechLanguageFor(text) {
-  if (language === "hi" && /[\u0900-\u097F]/.test(text)) return "hi-IN";
-  if (language === "mr" && /[\u0900-\u097F]/.test(text)) return "mr-IN";
-  if (language === "gu" && /[\u0A80-\u0AFF]/.test(text)) return "gu-IN";
+  if (language !== "en") return SaarthiI18n.languageCode(language);
   return "en-IN";
 }
 
 function recognitionLanguage() {
-  return { en: "en-IN", hi: "hi-IN", mr: "mr-IN", gu: "gu-IN" }[language] || "en-IN";
+  return SaarthiI18n.languageCode(language);
 }
 
 function speakAssistant(text) {
@@ -656,8 +654,8 @@ function updateReadiness() {
   $("#readiness-score").textContent = percentage + "%";
   $("#readiness-bar").style.width = percentage + "%";
   $("#readiness-text").textContent = percentage === 100
-    ? "Your profile is ready for personalised guidance"
-    : remaining + " key detail" + (remaining === 1 ? "" : "s") + " remaining";
+    ? SaarthiI18n.t("profileReady")
+    : remaining + " " + SaarthiI18n.t(remaining === 1 ? "detailRemaining" : "detailsRemaining");
 }
 
 function missingEligibilityFields() {
@@ -1910,10 +1908,14 @@ async function askAssistant(message, { autoApply = false } = {}) {
 
 async function changeLanguage() {
   language = $("#language-select").value;
+  SaarthiI18n.setLanguage(language);
+  language = SaarthiI18n.getLanguage();
+  $("#language-select").value = language;
+  syncVoiceButton();
   try {
     await api("/sessions/" + sessionId + "/language", "POST", { language });
-    showToast("Language preference saved.", "success");
-    speakAssistant("Language preference saved. I will read future answers aloud.");
+    showToast(language === "en" ? "Language preference saved." : SaarthiI18n.t("language") + " ✓", "success");
+    speakAssistant(SaarthiI18n.t("language") + ".");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -2017,7 +2019,9 @@ async function startSession() {
     try {
       session = await api("/sessions/" + savedSessionId);
       sessionId = session.session_id;
-      language = session.language || language;
+      language = session.language || SaarthiI18n.getLanguage() || language;
+      SaarthiI18n.setLanguage(language);
+      language = SaarthiI18n.getLanguage();
       restoreProfile(session.profile || {});
       renderSchemes(session.eligibility || []);
     } catch (error) {
@@ -2030,7 +2034,10 @@ async function startSession() {
     session = await api("/sessions", "POST");
     sessionId = session.session_id;
     localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
-    language = "en";
+    language = SaarthiI18n.getLanguage() || "en";
+    SaarthiI18n.setLanguage(language);
+    language = SaarthiI18n.getLanguage();
+    await api("/sessions/" + sessionId + "/language", "POST", { language });
     if (session.profile) {
       restoreProfile(session.profile);
     } else {
@@ -2040,6 +2047,7 @@ async function startSession() {
     }
   }
   $("#language-select").value = language;
+  SaarthiI18n.apply();
   syncVoiceButton();
   $("#session-status").textContent = "Secure session active";
   await loadServices();
